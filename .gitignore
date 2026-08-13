@@ -2,4 +2,5 @@ leads.db
 leads.db-shm
 leads.db-wal
 __pycache__/
-
+.env
+.vercel/

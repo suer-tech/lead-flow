@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, HttpUrl
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "leads.db"
 STATIC_DIR = BASE_DIR / "static"
+IS_VERCEL = bool(os.getenv("VERCEL"))
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+USE_POSTGRES = bool(DATABASE_URL)
+DB_PATH = Path("/tmp/leads.db") if IS_VERCEL else BASE_DIR / "leads.db"
+
+CRM_PASSWORD = os.getenv("CRM_PASSWORD", "")
+CRM_SECRET_KEY = os.getenv("CRM_SECRET_KEY") or CRM_PASSWORD or "lead-flow-local-only"
+SESSION_COOKIE = "lead_flow_session"
 
 LeadStatus = Literal[
     "new",
@@ -66,6 +76,10 @@ class LeadUpdate(BaseModel):
     budget: int | None = Field(default=None, ge=0)
 
 
+class LoginPayload(BaseModel):
+    password: str = Field(min_length=1, max_length=500)
+
+
 SEED_LEADS = [
     ("ООО «ТК ИНЖИНИРИНГ»", "135732490", "ИИ-инженер (автоматизация инженерных и строительных процессов)", "OCR входящих счетов, актов, спецификаций и ведомостей с передачей в Bitrix24 или 1С"),
     ("ООО «Ника»", "136059774", "Менеджер проектов по внедрению ИИ", "Внешняя разработка одного AI-пилота с кодом, документацией и метриками"),
@@ -91,7 +105,12 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
+def connect():
+    if USE_POSTGRES:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=10)
     connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
@@ -99,12 +118,25 @@ def connect() -> sqlite3.Connection:
     return connection
 
 
+def sql(query: str) -> str:
+    return query.replace("?", "%s") if USE_POSTGRES else query
+
+
+def serialize(row: Any) -> dict:
+    result = dict(row)
+    for key, value in result.items():
+        if isinstance(value, datetime):
+            result[key] = value.isoformat()
+    return result
+
+
 def init_database() -> None:
+    id_column = "BIGSERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     with closing(connect()) as db:
         db.execute(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS leads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {id_column},
                 company TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'new',
                 source TEXT NOT NULL DEFAULT 'hh.ru',
@@ -118,54 +150,110 @@ def init_database() -> None:
                 notes TEXT NOT NULL DEFAULT '',
                 next_action TEXT NOT NULL DEFAULT '',
                 next_action_at TEXT,
-                budget INTEGER,
+                budget BIGINT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 CHECK (status IN ('new','proposal_sent','interested','diagnostics','proposal','negotiations','won','lost'))
             )
             """
         )
-        count = db.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        if count == 0:
-            now = utc_now()
-            db.executemany(
-                """
-                INSERT INTO leads (
-                    company, status, source, source_url, vacancy, offer,
-                    next_action, next_action_at, created_at, updated_at
-                ) VALUES (?, 'proposal_sent', 'hh.ru', ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        company,
-                        f"https://hh.ru/vacancy/{vacancy_id}",
-                        vacancy,
-                        offer,
-                        "Проверить ответ и при отсутствии реакции отправить короткое напоминание",
-                        None,
-                        now,
-                        now,
-                    )
-                    for company, vacancy_id, vacancy, offer in SEED_LEADS
-                ],
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS leads_source_url_unique ON leads(source_url)")
+        now = utc_now()
+        values = [
+            (
+                company,
+                f"https://hh.ru/vacancy/{vacancy_id}",
+                vacancy,
+                offer,
+                "Проверить ответ и при отсутствии реакции отправить короткое напоминание",
+                None,
+                now,
+                now,
             )
+            for company, vacancy_id, vacancy, offer in SEED_LEADS
+        ]
+        insert_prefix = "INSERT INTO" if USE_POSTGRES else "INSERT OR IGNORE INTO"
+        conflict = " ON CONFLICT (source_url) DO NOTHING" if USE_POSTGRES else ""
+        seed_query = sql(
+            f"""
+            {insert_prefix} leads (
+                company, status, source, source_url, vacancy, offer,
+                next_action, next_action_at, created_at, updated_at
+            ) VALUES (?, 'proposal_sent', 'hh.ru', ?, ?, ?, ?, ?, ?, ?){conflict}
+            """
+        )
+        if USE_POSTGRES:
+            with db.cursor() as cursor:
+                cursor.executemany(seed_query, values)
+        else:
+            db.executemany(seed_query, values)
         db.commit()
 
 
-def serialize(row: sqlite3.Row) -> dict:
-    return dict(row)
+def session_token() -> str:
+    return hmac.new(CRM_SECRET_KEY.encode(), b"lead-flow-authenticated", hashlib.sha256).hexdigest()
 
 
-app = FastAPI(title="Lead Flow CRM", version="1.0.0")
+def is_authenticated(request: Request) -> bool:
+    if not CRM_PASSWORD and not IS_VERCEL:
+        return True
+    supplied = request.cookies.get(SESSION_COOKIE, "")
+    return bool(CRM_PASSWORD) and hmac.compare_digest(supplied, session_token())
+
+
+def require_auth(request: Request) -> None:
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Требуется вход")
+
+
+app = FastAPI(title="Lead Flow CRM", version="1.1.0")
 init_database()
 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "database": "postgres" if USE_POSTGRES else "sqlite",
+        "persistent": USE_POSTGRES or not IS_VERCEL,
+    }
 
 
-@app.get("/api/leads")
+@app.get("/api/auth/status")
+def auth_status(request: Request) -> dict:
+    return {
+        "authenticated": is_authenticated(request),
+        "required": bool(CRM_PASSWORD) or IS_VERCEL,
+        "configured": bool(CRM_PASSWORD) or not IS_VERCEL,
+    }
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload) -> JSONResponse:
+    if not CRM_PASSWORD:
+        raise HTTPException(status_code=503, detail="На Vercel задайте переменную CRM_PASSWORD")
+    if not hmac.compare_digest(payload.password, CRM_PASSWORD):
+        raise HTTPException(status_code=401, detail="Неверный пароль")
+    response = JSONResponse({"authenticated": True})
+    response.set_cookie(
+        SESSION_COOKIE,
+        session_token(),
+        httponly=True,
+        secure=IS_VERCEL,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
+    return response
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout() -> Response:
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
+
+
+@app.get("/api/leads", dependencies=[Depends(require_auth)])
 def list_leads(
     search: str = Query(default="", max_length=200),
     lead_status: LeadStatus | None = Query(default=None, alias="status"),
@@ -176,32 +264,34 @@ def list_leads(
         query += " AND status = ?"
         params.append(lead_status)
     if search.strip():
-        query += " AND (company LIKE ? OR vacancy LIKE ? OR offer LIKE ? OR notes LIKE ?)"
-        pattern = f"%{search.strip()}%"
+        query += " AND (LOWER(company) LIKE ? OR LOWER(vacancy) LIKE ? OR LOWER(offer) LIKE ? OR LOWER(notes) LIKE ?)"
+        pattern = f"%{search.strip().lower()}%"
         params.extend([pattern] * 4)
     query += " ORDER BY updated_at DESC, id DESC"
     with closing(connect()) as db:
-        return [serialize(row) for row in db.execute(query, params).fetchall()]
+        return [serialize(row) for row in db.execute(sql(query), params).fetchall()]
 
 
-@app.post("/api/leads", status_code=status.HTTP_201_CREATED)
+@app.post("/api/leads", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
 def create_lead(payload: LeadCreate) -> dict:
     values = payload.model_dump(mode="json")
     now = utc_now()
     columns = list(values) + ["created_at", "updated_at"]
     parameters = [values[column] for column in values] + [now, now]
     placeholders = ", ".join("?" for _ in columns)
+    returning = " RETURNING id" if USE_POSTGRES else ""
     with closing(connect()) as db:
         cursor = db.execute(
-            f"INSERT INTO leads ({', '.join(columns)}) VALUES ({placeholders})",
+            sql(f"INSERT INTO leads ({', '.join(columns)}) VALUES ({placeholders}){returning}"),
             parameters,
         )
+        lead_id = cursor.fetchone()["id"] if USE_POSTGRES else cursor.lastrowid
         db.commit()
-        row = db.execute("SELECT * FROM leads WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        row = db.execute(sql("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
         return serialize(row)
 
 
-@app.patch("/api/leads/{lead_id}")
+@app.patch("/api/leads/{lead_id}", dependencies=[Depends(require_auth)])
 def update_lead(lead_id: int, payload: LeadUpdate) -> dict:
     values = payload.model_dump(exclude_unset=True, mode="json")
     if not values:
@@ -210,20 +300,20 @@ def update_lead(lead_id: int, payload: LeadUpdate) -> dict:
     assignment = ", ".join(f"{column} = ?" for column in values)
     with closing(connect()) as db:
         cursor = db.execute(
-            f"UPDATE leads SET {assignment} WHERE id = ?",
+            sql(f"UPDATE leads SET {assignment} WHERE id = ?"),
             [*values.values(), lead_id],
         )
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Лид не найден")
         db.commit()
-        row = db.execute("SELECT * FROM leads WHERE id = ?", (lead_id,)).fetchone()
+        row = db.execute(sql("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
         return serialize(row)
 
 
-@app.delete("/api/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/api/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_auth)])
 def delete_lead(lead_id: int) -> Response:
     with closing(connect()) as db:
-        cursor = db.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+        cursor = db.execute(sql("DELETE FROM leads WHERE id = ?"), (lead_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Лид не найден")
         db.commit()
@@ -236,4 +326,3 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/{path:path}")
 def frontend(path: str) -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
-

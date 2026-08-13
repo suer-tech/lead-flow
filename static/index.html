@@ -25,6 +25,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
             <input id="search" type="search" placeholder="Компания, вакансия, заметка" />
           </label>
+          <button class="button ghost hidden" id="logoutButton">Выйти</button>
           <button class="button primary" id="addLeadButton"><span>＋</span> Новый лид</button>
         </div>
       </header>
@@ -80,6 +81,18 @@
         </div>
       </form>
     </dialog>
+
+    <section class="login-overlay hidden" id="loginOverlay" aria-label="Вход в CRM">
+      <form class="login-card" id="loginForm">
+        <div class="brand-mark">LF</div>
+        <div class="eyebrow">Закрытая CRM</div>
+        <h2>Вход в Lead Flow</h2>
+        <p>Введите пароль, заданный в настройках проекта Vercel.</p>
+        <label class="field">Пароль<input id="loginPassword" type="password" required autocomplete="current-password" placeholder="Пароль CRM" /></label>
+        <div class="login-error hidden" id="loginError"></div>
+        <button class="button primary" type="submit">Войти</button>
+      </form>
+    </section>
 
     <script src="/static/app.js" defer></script>
   </body>

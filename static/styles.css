@@ -185,6 +185,33 @@ h2 { font-size: 26px; }
 .source-link:hover { text-decoration: underline; }
 .footer-spacer { flex: 1; }
 
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 70% 20%, rgba(216, 255, 73, .34), transparent 30rem),
+    var(--paper);
+}
+.login-card {
+  display: grid;
+  gap: 16px;
+  width: min(410px, 100%);
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.login-card .brand-mark { margin-bottom: 4px; }
+.login-card h2 { margin: 0; }
+.login-card p { margin: -6px 0 3px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.login-card .button { width: 100%; margin-top: 2px; }
+.login-error { padding: 10px 12px; border-radius: 9px; color: #8f2f20; background: #ffe0da; font-size: 12px; font-weight: 700; }
+
 @media (max-width: 760px) {
   .topbar { align-items: stretch; flex-direction: column; gap: 12px; }
   .header-actions { width: 100%; }

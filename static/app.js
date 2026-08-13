@@ -16,6 +16,10 @@ const notice = document.querySelector("#notice");
 const dialog = document.querySelector("#leadDialog");
 const form = document.querySelector("#leadForm");
 const statusSelect = document.querySelector("#statusSelect");
+const loginOverlay = document.querySelector("#loginOverlay");
+const loginForm = document.querySelector("#loginForm");
+const loginError = document.querySelector("#loginError");
+const logoutButton = document.querySelector("#logoutButton");
 
 statusSelect.innerHTML = STATUSES.map((status) => `<option value="${status.id}">${status.label}</option>`).join("");
 
@@ -53,7 +57,9 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.detail || `Ошибка ${response.status}`);
+    const apiError = new Error(error.detail || `Ошибка ${response.status}`);
+    apiError.status = response.status;
+    throw apiError;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -248,13 +254,62 @@ dialog.addEventListener("click", (event) => {
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
 });
 
-async function load() {
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  loginError.classList.add("hidden");
+  try {
+    await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password: document.querySelector("#loginPassword").value }),
+    });
+    document.querySelector("#loginPassword").value = "";
+    loginOverlay.classList.add("hidden");
+    logoutButton.classList.remove("hidden");
+    await loadLeads();
+  } catch (error) {
+    loginError.textContent = error.message;
+    loginError.classList.remove("hidden");
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  await api("/api/auth/logout", { method: "POST" });
+  state.leads = [];
+  render();
+  loginOverlay.classList.remove("hidden");
+  logoutButton.classList.add("hidden");
+  document.querySelector("#loginPassword").focus();
+});
+
+async function loadLeads() {
   try {
     state.leads = await api("/api/leads");
     render();
   } catch (error) {
+    if (error.status === 401) {
+      loginOverlay.classList.remove("hidden");
+      return;
+    }
     showNotice(`Не удалось загрузить CRM: ${error.message}`, true);
   }
 }
 
-load();
+async function bootstrap() {
+  try {
+    const auth = await api("/api/auth/status");
+    if (auth.required) logoutButton.classList.toggle("hidden", !auth.authenticated);
+    if (!auth.configured || !auth.authenticated) {
+      loginOverlay.classList.remove("hidden");
+      if (!auth.configured) {
+        loginError.textContent = "В настройках Vercel необходимо добавить переменную CRM_PASSWORD.";
+        loginError.classList.remove("hidden");
+      }
+      return;
+    }
+    await loadLeads();
+  } catch (error) {
+    showNotice(`Не удалось запустить CRM: ${error.message}`, true);
+  }
+}
+
+bootstrap();
