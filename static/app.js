@@ -2,6 +2,7 @@ const STATUSES = [
   { id: "new", label: "Новый", color: "#8c9285" },
   { id: "proposal_sent", label: "Предложение отправлено", color: "#5c78d8" },
   { id: "interested", label: "Есть интерес", color: "#b58c1c" },
+  { id: "follow_up", label: "Дожим", color: "#b6632f" },
   { id: "diagnostics", label: "Диагностика", color: "#8a65c7" },
   { id: "proposal", label: "КП", color: "#d1773f" },
   { id: "negotiations", label: "Переговоры", color: "#257f7b" },
@@ -107,7 +108,7 @@ function render() {
   }).join("");
 
   const active = state.leads.filter((lead) => !["won", "lost"].includes(lead.status)).length;
-  const interested = state.leads.filter((lead) => ["interested", "diagnostics", "proposal", "negotiations"].includes(lead.status)).length;
+  const interested = state.leads.filter((lead) => ["interested", "follow_up", "diagnostics", "proposal", "negotiations"].includes(lead.status)).length;
   const pipeline = state.leads.filter((lead) => !["lost"].includes(lead.status)).reduce((sum, lead) => sum + (lead.budget || 0), 0);
   metrics.innerHTML = `
     <div class="metric"><strong>${active}</strong><span>активных</span></div>

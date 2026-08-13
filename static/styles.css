@@ -110,7 +110,7 @@ h2 { font-size: 26px; }
 
 .board {
   display: grid;
-  grid-template-columns: repeat(8, minmax(276px, 1fr));
+  grid-template-columns: repeat(9, minmax(276px, 1fr));
   gap: 14px;
   overflow-x: auto;
   padding: 4px 2px 22px;

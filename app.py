@@ -30,6 +30,7 @@ LeadStatus = Literal[
     "new",
     "proposal_sent",
     "interested",
+    "follow_up",
     "diagnostics",
     "proposal",
     "negotiations",
@@ -53,6 +54,7 @@ class LeadBase(BaseModel):
     next_action: str = Field(default="", max_length=500)
     next_action_at: str | None = None
     budget: int | None = Field(default=None, ge=0)
+    proposal_sent_at: str | None = None
 
 
 class LeadCreate(LeadBase):
@@ -74,6 +76,7 @@ class LeadUpdate(BaseModel):
     next_action: str | None = Field(default=None, max_length=500)
     next_action_at: str | None = None
     budget: int | None = Field(default=None, ge=0)
+    proposal_sent_at: str | None = None
 
 
 class LoginPayload(BaseModel):
@@ -168,12 +171,37 @@ def init_database() -> None:
                 next_action TEXT NOT NULL DEFAULT '',
                 next_action_at TEXT,
                 budget BIGINT,
+                proposal_sent_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                CHECK (status IN ('new','proposal_sent','interested','diagnostics','proposal','negotiations','won','lost'))
+                CHECK (status IN ('new','proposal_sent','interested','follow_up','diagnostics','proposal','negotiations','won','lost'))
             )
             """
         )
+        if USE_POSTGRES:
+            db.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS proposal_sent_at TEXT")
+            db.execute(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conrelid = 'leads'::regclass
+                          AND conname = 'leads_status_check'
+                          AND pg_get_constraintdef(oid) NOT LIKE '%follow_up%'
+                    ) THEN
+                        ALTER TABLE leads DROP CONSTRAINT leads_status_check;
+                        ALTER TABLE leads ADD CONSTRAINT leads_status_check
+                        CHECK (status IN ('new','proposal_sent','interested','follow_up','diagnostics','proposal','negotiations','won','lost'));
+                    END IF;
+                END $$
+                """
+            )
+        else:
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(leads)").fetchall()}
+            if "proposal_sent_at" not in columns:
+                db.execute("ALTER TABLE leads ADD COLUMN proposal_sent_at TEXT")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS leads_source_url_unique ON leads(source_url)")
         existing_count = db.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"]
         if existing_count:
@@ -229,7 +257,7 @@ def require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Требуется вход")
 
 
-app = FastAPI(title="Lead Flow CRM", version="1.1.0")
+app = FastAPI(title="Lead Flow CRM", version="1.2.0")
 init_database()
 
 
@@ -299,6 +327,8 @@ def list_leads(
 def create_lead(payload: LeadCreate) -> dict:
     values = payload.model_dump(mode="json")
     now = utc_now()
+    if values["status"] == "proposal_sent" and not values.get("proposal_sent_at"):
+        values["proposal_sent_at"] = now
     columns = list(values) + ["created_at", "updated_at"]
     parameters = [values[column] for column in values] + [now, now]
     placeholders = ", ".join("?" for _ in columns)
@@ -319,15 +349,22 @@ def update_lead(lead_id: int, payload: LeadUpdate) -> dict:
     values = payload.model_dump(exclude_unset=True, mode="json")
     if not values:
         raise HTTPException(status_code=400, detail="Нет полей для изменения")
-    values["updated_at"] = utc_now()
-    assignment = ", ".join(f"{column} = ?" for column in values)
     with closing(connect()) as db:
+        existing = db.execute(
+            sql("SELECT status, proposal_sent_at FROM leads WHERE id = ?"),
+            (lead_id,),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Лид не найден")
+        now = utc_now()
+        if values.get("status") == "proposal_sent" and "proposal_sent_at" not in values:
+            values["proposal_sent_at"] = existing["proposal_sent_at"] or now
+        values["updated_at"] = now
+        assignment = ", ".join(f"{column} = ?" for column in values)
         cursor = db.execute(
             sql(f"UPDATE leads SET {assignment} WHERE id = ?"),
             [*values.values(), lead_id],
         )
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Лид не найден")
         db.commit()
         row = db.execute(sql("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
         return serialize(row)
