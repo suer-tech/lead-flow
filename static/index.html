@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171914" />
+    <title>Lead Flow — мини-CRM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark">LF</div>
+          <div>
+            <div class="brand">Lead Flow</div>
+            <div class="eyebrow">AI Studio · продажи</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <label class="search-wrap" aria-label="Поиск лидов">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+            <input id="search" type="search" placeholder="Компания, вакансия, заметка" />
+          </label>
+          <button class="button primary" id="addLeadButton"><span>＋</span> Новый лид</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <div class="eyebrow">Воронка продаж</div>
+            <h1>Лиды и следующие шаги</h1>
+            <p>От первого контакта до оплаченного AI-проекта — без потерянных договорённостей.</p>
+          </div>
+          <div class="metrics" id="metrics"></div>
+        </section>
+
+        <div class="notice hidden" id="notice" role="status"></div>
+        <section class="board" id="board" aria-label="Канбан лидов"></section>
+      </main>
+    </div>
+
+    <dialog id="leadDialog" class="lead-dialog">
+      <form id="leadForm" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <div class="eyebrow" id="dialogEyebrow">Новый лид</div>
+            <h2 id="dialogTitle">Добавить компанию</h2>
+          </div>
+          <button class="icon-button" type="button" id="closeDialog" aria-label="Закрыть">×</button>
+        </div>
+
+        <input id="leadId" name="id" type="hidden" />
+        <div class="form-grid">
+          <label class="field span-2">Компания<input name="company" required maxlength="180" placeholder="Название компании" /></label>
+          <label class="field">Стадия<select name="status" id="statusSelect"></select></label>
+          <label class="field">Источник<input name="source" maxlength="80" value="hh.ru" placeholder="hh.ru, e-mail, рекомендация" /></label>
+          <label class="field span-2">Вакансия или сигнал<input name="vacancy" maxlength="240" placeholder="Название вакансии или причина контакта" /></label>
+          <label class="field span-2">Ссылка<input name="source_url" type="url" placeholder="https://hh.ru/vacancy/..." /></label>
+          <label class="field">Контакт<input name="contact_name" maxlength="160" placeholder="Имя" /></label>
+          <label class="field">Роль<input name="contact_role" maxlength="160" placeholder="Должность" /></label>
+          <label class="field">Телефон<input name="phone" maxlength="80" placeholder="+7 ..." /></label>
+          <label class="field">E-mail<input name="email" type="email" maxlength="180" placeholder="name@company.ru" /></label>
+          <label class="field span-2">Предложение<textarea name="offer" maxlength="2000" rows="3" placeholder="Какой результат предлагаем этой компании"></textarea></label>
+          <label class="field span-2">Заметки<textarea name="notes" maxlength="5000" rows="4" placeholder="Итоги звонка, возражения, договорённости"></textarea></label>
+          <label class="field span-2">Следующее действие<input name="next_action" maxlength="500" placeholder="Напомнить, созвониться, отправить расчёт" /></label>
+          <label class="field">Дата следующего действия<input name="next_action_at" type="datetime-local" /></label>
+          <label class="field">Бюджет, ₽<input name="budget" type="number" min="0" step="1000" placeholder="200000" /></label>
+        </div>
+        <div class="dialog-footer">
+          <button class="button danger hidden" type="button" id="deleteLeadButton">Удалить</button>
+          <a class="source-link hidden" id="sourceLink" href="#" target="_blank" rel="noreferrer">↗ Открыть источник</a>
+          <div class="footer-spacer"></div>
+          <button class="button ghost" type="button" id="cancelDialog">Отмена</button>
+          <button class="button primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
