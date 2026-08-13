@@ -3,4 +3,5 @@ leads.db-shm
 leads.db-wal
 __pycache__/
 .env
+.env.crm.local
 .vercel/
