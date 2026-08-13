@@ -173,11 +173,11 @@ h2 { font-size: 26px; }
 .budget { font-size: 11px; font-weight: 800; }
 .empty-column { padding: 30px 12px; border: 1px dashed #d3d1c7; border-radius: 12px; color: #989c91; text-align: center; font-size: 12px; }
 
-.dashboard-view { display: grid; gap: 18px; padding-bottom: 28px; }
-.dashboard-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.dashboard-view { display: grid; min-width: 0; gap: 18px; padding-bottom: 28px; }
+.dashboard-toolbar { display: flex; min-width: 0; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .period-switcher { width: fit-content; margin-top: 8px; }
 .dashboard-period { color: var(--muted); font-size: 12px; font-weight: 600; text-align: right; }
-.dashboard-cards { display: grid; grid-template-columns: repeat(6, minmax(145px, 1fr)); gap: 12px; }
+.dashboard-cards { display: grid; min-width: 0; grid-template-columns: repeat(6, minmax(145px, 1fr)); gap: 12px; }
 .dashboard-card {
   min-height: 142px;
   padding: 20px;
@@ -189,8 +189,8 @@ h2 { font-size: 26px; }
 .dashboard-card strong { display: block; font-family: "Unbounded", sans-serif; font-size: clamp(27px, 3vw, 38px); letter-spacing: -.05em; }
 .dashboard-card span { display: block; margin-top: 13px; font-size: 13px; font-weight: 800; }
 .dashboard-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
-.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr); gap: 16px; }
-.analytics-panel { padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: rgba(251, 250, 246, .76); }
+.dashboard-grid { display: grid; min-width: 0; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .65fr); gap: 16px; }
+.analytics-panel { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: rgba(251, 250, 246, .76); }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
 .panel-heading h2 { font-size: 20px; }
 .timeline-chart { display: flex; align-items: stretch; gap: 10px; min-height: 260px; overflow-x: auto; }
