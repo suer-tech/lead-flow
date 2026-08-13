@@ -277,8 +277,8 @@ h2 { font-size: 26px; }
 
 @media (max-width: 760px) {
   .topbar { align-items: stretch; flex-direction: column; gap: 12px; }
-  .header-actions { width: 100%; }
-  .view-switcher { order: 3; width: 100%; }
+  .header-actions { width: 100%; flex-wrap: wrap; }
+  .view-switcher { order: 3; flex: 0 0 100%; width: 100%; }
   .view-button { flex: 1; }
   .search-wrap { flex: 1; width: auto; }
   .hero { align-items: flex-start; flex-direction: column; padding-top: 30px; }
