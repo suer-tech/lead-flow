@@ -175,6 +175,11 @@ def init_database() -> None:
             """
         )
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS leads_source_url_unique ON leads(source_url)")
+        existing_count = db.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"]
+        if existing_count:
+            db.commit()
+            return
+
         now = utc_now()
         values = [
             (
