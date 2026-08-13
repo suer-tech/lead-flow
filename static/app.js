@@ -10,7 +10,7 @@ const STATUSES = [
   { id: "lost", label: "Отказ", color: "#a65a50" },
 ];
 
-const state = { leads: [], search: "", draggedId: null };
+const state = { leads: [], search: "", draggedId: null, view: "board", period: "week", dashboard: null };
 const board = document.querySelector("#board");
 const metrics = document.querySelector("#metrics");
 const notice = document.querySelector("#notice");
@@ -21,6 +21,17 @@ const loginOverlay = document.querySelector("#loginOverlay");
 const loginForm = document.querySelector("#loginForm");
 const loginError = document.querySelector("#loginError");
 const logoutButton = document.querySelector("#logoutButton");
+const boardView = document.querySelector("#boardView");
+const dashboardView = document.querySelector("#dashboardView");
+const dashboardCards = document.querySelector("#dashboardCards");
+const timelineChart = document.querySelector("#timelineChart");
+const funnelList = document.querySelector("#funnelList");
+const activityList = document.querySelector("#activityList");
+const dashboardPeriod = document.querySelector("#dashboardPeriod");
+const searchWrap = document.querySelector(".search-wrap");
+const addLeadButton = document.querySelector("#addLeadButton");
+
+const STATUS_BY_ID = Object.fromEntries(STATUSES.map((status) => [status.id, status]));
 
 statusSelect.innerHTML = STATUSES.map((status) => `<option value="${status.id}">${status.label}</option>`).join("");
 
@@ -37,6 +48,15 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function formatFullDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
 }
 
 function isOverdue(value) {
@@ -116,6 +136,90 @@ function render() {
     <div class="metric"><strong>${pipeline ? formatMoney(pipeline) : "—"}</strong><span>в воронке</span></div>`;
 
   bindBoardEvents();
+}
+
+function metricCard(value, label, note = "") {
+  return `<article class="dashboard-card"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span>${note ? `<small>${escapeHtml(note)}</small>` : ""}</article>`;
+}
+
+function renderDashboard() {
+  const data = state.dashboard;
+  if (!data) return;
+  const metric = data.metrics;
+  dashboardCards.innerHTML = [
+    metricCard(metric.created, "Новых лидов", "добавлено за период"),
+    metricCard(metric.proposals_sent, "Предложений", "отправлено за период"),
+    metricCard(metric.interested, "Есть интерес", "переходов за период"),
+    metricCard(metric.follow_ups, "Дожим", "переведено за период"),
+    metricCard(metric.won, "Успехов", "оплаченных результатов"),
+    metricCard(`${metric.success_rate}%`, "Конверсия в успех", "успехи / новые лиды"),
+  ].join("");
+
+  dashboardPeriod.textContent = data.start_at
+    ? `${formatFullDate(data.start_at)} — ${formatFullDate(data.end_at)} · ${data.timezone}`
+    : `За всё время · обновлено ${formatFullDate(data.end_at)}`;
+
+  const timeline = data.timeline || [];
+  const maxActivity = Math.max(1, ...timeline.map((item) => item.activities));
+  timelineChart.innerHTML = timeline.length ? timeline.map((item) => `
+    <div class="timeline-column" title="${escapeHtml(item.label)}: действий ${item.activities}, новых ${item.created}, успехов ${item.won}">
+      <div class="timeline-value">${item.activities}</div>
+      <div class="timeline-track">
+        <div class="timeline-bar" style="height:${Math.max(8, item.activities / maxActivity * 100)}%"></div>
+      </div>
+      <div class="timeline-label">${escapeHtml(item.label)}</div>
+    </div>`).join("") : '<div class="analytics-empty">За выбранный период действий пока нет</div>';
+
+  const funnel = data.current_funnel || {};
+  const maxFunnel = Math.max(1, ...STATUSES.map((status) => funnel[status.id] || 0));
+  funnelList.innerHTML = STATUSES.map((status) => {
+    const count = funnel[status.id] || 0;
+    return `<div class="funnel-row">
+      <div class="funnel-name"><span style="background:${status.color}"></span>${status.label}</div>
+      <div class="funnel-track"><div style="width:${count / maxFunnel * 100}%;background:${status.color}"></div></div>
+      <strong>${count}</strong>
+    </div>`;
+  }).join("");
+
+  const events = data.recent_events || [];
+  activityList.innerHTML = events.length ? events.map((event) => {
+    const from = STATUS_BY_ID[event.from_status]?.label;
+    const to = STATUS_BY_ID[event.to_status]?.label;
+    let action = "Лид добавлен";
+    if (event.event_type === "status_changed") action = `${from || "Создан"} → ${to || "—"}`;
+    if (event.event_type === "baseline_status") action = `Исходный статус: ${to || "—"}`;
+    return `<div class="activity-row">
+      <div><strong>${escapeHtml(event.company)}</strong><span>${escapeHtml(action)}</span></div>
+      <time>${escapeHtml(formatFullDate(event.occurred_at))}</time>
+    </div>`;
+  }).join("") : '<div class="analytics-empty">История за выбранный период пуста</div>';
+}
+
+async function loadDashboard() {
+  dashboardCards.innerHTML = '<div class="analytics-empty">Загружаем аналитику…</div>';
+  try {
+    state.dashboard = await api(`/api/dashboard?period=${state.period}`);
+    renderDashboard();
+  } catch (error) {
+    showNotice(`Не удалось загрузить дашборд: ${error.message}`, true);
+  }
+}
+
+async function switchView(view) {
+  state.view = view;
+  const isDashboard = view === "dashboard";
+  boardView.classList.toggle("hidden", isDashboard);
+  dashboardView.classList.toggle("hidden", !isDashboard);
+  searchWrap.classList.toggle("hidden", isDashboard);
+  addLeadButton.classList.toggle("hidden", isDashboard);
+  metrics.classList.toggle("hidden", isDashboard);
+  document.querySelectorAll(".view-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  document.querySelector("#heroEyebrow").textContent = isDashboard ? "Аналитика продаж" : "Воронка продаж";
+  document.querySelector("#heroTitle").textContent = isDashboard ? "Результаты и эффективность" : "Лиды и следующие шаги";
+  document.querySelector("#heroText").textContent = isDashboard
+    ? "Сколько лидов найдено, обработано и доведено до результата."
+    : "От первого контакта до оплаченного AI-проекта — без потерянных договорённостей.";
+  if (isDashboard) await loadDashboard();
 }
 
 function bindBoardEvents() {
@@ -246,13 +350,25 @@ document.querySelector("#deleteLeadButton").addEventListener("click", async () =
   } catch (error) { showNotice(error.message, true); }
 });
 
-document.querySelector("#addLeadButton").addEventListener("click", openCreate);
+addLeadButton.addEventListener("click", openCreate);
 document.querySelector("#closeDialog").addEventListener("click", () => dialog.close());
 document.querySelector("#cancelDialog").addEventListener("click", () => dialog.close());
 document.querySelector("#search").addEventListener("input", (event) => { state.search = event.target.value; render(); });
 dialog.addEventListener("click", (event) => {
   const rect = dialog.getBoundingClientRect();
   if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+});
+
+document.querySelectorAll(".view-button").forEach((button) => {
+  button.addEventListener("click", () => switchView(button.dataset.view));
+});
+
+document.querySelectorAll(".period-button").forEach((button) => {
+  button.addEventListener("click", async () => {
+    state.period = button.dataset.period;
+    document.querySelectorAll(".period-button").forEach((item) => item.classList.toggle("active", item === button));
+    await loadDashboard();
+  });
 });
 
 loginForm.addEventListener("submit", async (event) => {

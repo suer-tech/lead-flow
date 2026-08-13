@@ -21,6 +21,10 @@
           </div>
         </div>
         <div class="header-actions">
+          <nav class="view-switcher" aria-label="Разделы CRM">
+            <button class="view-button active" type="button" data-view="board">Канбан</button>
+            <button class="view-button" type="button" data-view="dashboard">Дашборд</button>
+          </nav>
           <label class="search-wrap" aria-label="Поиск лидов">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
             <input id="search" type="search" placeholder="Компания, вакансия, заметка" />
@@ -31,17 +35,58 @@
       </header>
 
       <main>
-        <section class="hero">
+        <section class="hero" id="hero">
           <div>
-            <div class="eyebrow">Воронка продаж</div>
-            <h1>Лиды и следующие шаги</h1>
-            <p>От первого контакта до оплаченного AI-проекта — без потерянных договорённостей.</p>
+            <div class="eyebrow" id="heroEyebrow">Воронка продаж</div>
+            <h1 id="heroTitle">Лиды и следующие шаги</h1>
+            <p id="heroText">От первого контакта до оплаченного AI-проекта — без потерянных договорённостей.</p>
           </div>
           <div class="metrics" id="metrics"></div>
         </section>
 
         <div class="notice hidden" id="notice" role="status"></div>
-        <section class="board" id="board" aria-label="Канбан лидов"></section>
+        <section id="boardView">
+          <section class="board" id="board" aria-label="Канбан лидов"></section>
+        </section>
+
+        <section class="dashboard-view hidden" id="dashboardView" aria-label="Аналитика лидов">
+          <div class="dashboard-toolbar">
+            <div>
+              <div class="eyebrow">Период отчёта</div>
+              <div class="period-switcher" id="periodSwitcher">
+                <button class="period-button" type="button" data-period="day">День</button>
+                <button class="period-button active" type="button" data-period="week">Неделя</button>
+                <button class="period-button" type="button" data-period="month">Месяц</button>
+                <button class="period-button" type="button" data-period="all">Всё время</button>
+              </div>
+            </div>
+            <div class="dashboard-period" id="dashboardPeriod"></div>
+          </div>
+
+          <div class="dashboard-cards" id="dashboardCards"></div>
+
+          <div class="dashboard-grid">
+            <section class="analytics-panel">
+              <div class="panel-heading">
+                <div><div class="eyebrow">Динамика</div><h2>Работа по периодам</h2></div>
+              </div>
+              <div class="timeline-chart" id="timelineChart"></div>
+            </section>
+            <section class="analytics-panel">
+              <div class="panel-heading">
+                <div><div class="eyebrow">Сейчас</div><h2>Текущая воронка</h2></div>
+              </div>
+              <div class="funnel-list" id="funnelList"></div>
+            </section>
+          </div>
+
+          <section class="analytics-panel activity-panel">
+            <div class="panel-heading">
+              <div><div class="eyebrow">История</div><h2>Последние изменения</h2></div>
+            </div>
+            <div class="activity-list" id="activityList"></div>
+          </section>
+        </section>
       </main>
     </div>
 

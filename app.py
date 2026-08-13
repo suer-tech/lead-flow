@@ -5,9 +5,10 @@ import hmac
 import os
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -37,6 +38,8 @@ LeadStatus = Literal[
     "won",
     "lost",
 ]
+DashboardPeriod = Literal["day", "week", "month", "all"]
+BUSINESS_TZ = ZoneInfo("Asia/Yekaterinburg")
 
 
 class LeadBase(BaseModel):
@@ -150,8 +153,70 @@ def serialize(row: Any) -> dict:
     return result
 
 
+def parse_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def period_start(period: DashboardPeriod, now: datetime) -> datetime | None:
+    local_now = now.astimezone(BUSINESS_TZ)
+    if period == "day":
+        local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "week":
+        local_start = (local_now - timedelta(days=local_now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+    elif period == "month":
+        local_start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return None
+    return local_start.astimezone(timezone.utc)
+
+
+def backfill_lead_events(db: Any) -> None:
+    """Create a conservative baseline for leads that predate event tracking."""
+    db.execute(
+        "UPDATE leads SET proposal_sent_at = created_at WHERE proposal_sent_at IS NULL AND status <> 'new'"
+    )
+    db.execute(
+        """
+        INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at)
+        SELECT l.id, 'created', NULL, 'new', l.created_at
+        FROM leads l
+        WHERE NOT EXISTS (
+            SELECT 1 FROM lead_events e WHERE e.lead_id = l.id AND e.event_type = 'created'
+        )
+        """
+    )
+    db.execute(
+        """
+        INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at)
+        SELECT l.id, 'status_changed', 'new', 'proposal_sent', l.proposal_sent_at
+        FROM leads l
+        WHERE l.proposal_sent_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM lead_events e
+            WHERE e.lead_id = l.id AND e.to_status = 'proposal_sent'
+          )
+        """
+    )
+    db.execute(
+        """
+        INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at)
+        SELECT l.id, 'baseline_status', NULL, l.status, l.updated_at
+        FROM leads l
+        WHERE l.status NOT IN ('new', 'proposal_sent')
+          AND NOT EXISTS (
+            SELECT 1 FROM lead_events e
+            WHERE e.lead_id = l.id AND e.to_status = l.status
+          )
+        """
+    )
+
+
 def init_database() -> None:
     id_column = "BIGSERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    event_id_column = "BIGSERIAL PRIMARY KEY" if USE_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
     with closing(connect()) as db:
         db.execute(
             f"""
@@ -203,8 +268,24 @@ def init_database() -> None:
             if "proposal_sent_at" not in columns:
                 db.execute("ALTER TABLE leads ADD COLUMN proposal_sent_at TEXT")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS leads_source_url_unique ON leads(source_url)")
+        db.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS lead_events (
+                id {event_id_column},
+                lead_id BIGINT NOT NULL,
+                event_type TEXT NOT NULL,
+                from_status TEXT,
+                to_status TEXT,
+                occurred_at TEXT NOT NULL,
+                FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE CASCADE
+            )
+            """
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS lead_events_occurred_at_idx ON lead_events(occurred_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS lead_events_lead_id_idx ON lead_events(lead_id)")
         existing_count = db.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"]
         if existing_count:
+            backfill_lead_events(db)
             db.commit()
             return
 
@@ -238,6 +319,7 @@ def init_database() -> None:
                 cursor.executemany(seed_query, values)
         else:
             db.executemany(seed_query, values)
+        backfill_lead_events(db)
         db.commit()
 
 
@@ -257,7 +339,7 @@ def require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Требуется вход")
 
 
-app = FastAPI(title="Lead Flow CRM", version="1.2.0")
+app = FastAPI(title="Lead Flow CRM", version="1.3.0")
 init_database()
 
 
@@ -323,6 +405,86 @@ def list_leads(
         return [serialize(row) for row in db.execute(sql(query), params).fetchall()]
 
 
+@app.get("/api/dashboard", dependencies=[Depends(require_auth)])
+def dashboard(period: DashboardPeriod = Query(default="week")) -> dict:
+    now = datetime.now(timezone.utc)
+    start = period_start(period, now)
+    where = ""
+    params: list[str] = []
+    if start:
+        where = "WHERE e.occurred_at >= ? AND e.occurred_at <= ?"
+        params = [start.isoformat(timespec="seconds"), now.isoformat(timespec="seconds")]
+
+    with closing(connect()) as db:
+        events = [
+            serialize(row)
+            for row in db.execute(
+                sql(
+                    f"""
+                    SELECT e.*, l.company
+                    FROM lead_events e
+                    JOIN leads l ON l.id = e.lead_id
+                    {where}
+                    ORDER BY e.occurred_at DESC, e.id DESC
+                    """
+                ),
+                params,
+            ).fetchall()
+        ]
+        funnel_rows = db.execute(
+            "SELECT status, COUNT(*) AS count FROM leads GROUP BY status"
+        ).fetchall()
+        lead_statuses = {
+            row["id"]: row["status"]
+            for row in db.execute("SELECT id, status FROM leads").fetchall()
+        }
+
+    created_ids = {event["lead_id"] for event in events if event["event_type"] == "created"}
+    status_ids = {
+        status_name: {
+            event["lead_id"]
+            for event in events
+            if event["to_status"] == status_name
+        }
+        for status_name in LeadStatus.__args__
+    }
+    successes = len(status_ids["won"])
+    created = len(created_ids)
+    cohort_successes = sum(lead_statuses.get(lead_id) == "won" for lead_id in created_ids)
+    metrics = {
+        "created": created,
+        "proposals_sent": len(status_ids["proposal_sent"]),
+        "interested": len(status_ids["interested"]),
+        "follow_ups": len(status_ids["follow_up"]),
+        "won": successes,
+        "lost": len(status_ids["lost"]),
+        "success_rate": round(cohort_successes / created * 100, 1) if created else 0,
+        "activities": len(events),
+    }
+
+    buckets: dict[str, dict] = {}
+    for event in reversed(events):
+        local_time = parse_timestamp(event["occurred_at"]).astimezone(BUSINESS_TZ)
+        key = local_time.strftime("%H:00") if period == "day" else local_time.strftime("%d.%m")
+        bucket = buckets.setdefault(key, {"label": key, "created": 0, "won": 0, "activities": 0})
+        bucket["activities"] += 1
+        if event["event_type"] == "created":
+            bucket["created"] += 1
+        if event["to_status"] == "won":
+            bucket["won"] += 1
+
+    return {
+        "period": period,
+        "timezone": "UTC+5",
+        "start_at": start.isoformat(timespec="seconds") if start else None,
+        "end_at": now.isoformat(timespec="seconds"),
+        "metrics": metrics,
+        "current_funnel": {row["status"]: row["count"] for row in funnel_rows},
+        "timeline": list(buckets.values()),
+        "recent_events": events[:30],
+    }
+
+
 @app.post("/api/leads", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
 def create_lead(payload: LeadCreate) -> dict:
     values = payload.model_dump(mode="json")
@@ -339,6 +501,21 @@ def create_lead(payload: LeadCreate) -> dict:
             parameters,
         )
         lead_id = cursor.fetchone()["id"] if USE_POSTGRES else cursor.lastrowid
+        db.execute(
+            sql(
+                "INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at) "
+                "VALUES (?, 'created', NULL, ?, ?)"
+            ),
+            (lead_id, values["status"], now),
+        )
+        if values["status"] != "new":
+            db.execute(
+                sql(
+                    "INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at) "
+                    "VALUES (?, 'status_changed', 'new', ?, ?)"
+                ),
+                (lead_id, values["status"], now),
+            )
         db.commit()
         row = db.execute(sql("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
         return serialize(row)
@@ -365,6 +542,14 @@ def update_lead(lead_id: int, payload: LeadUpdate) -> dict:
             sql(f"UPDATE leads SET {assignment} WHERE id = ?"),
             [*values.values(), lead_id],
         )
+        if "status" in values and values["status"] != existing["status"]:
+            db.execute(
+                sql(
+                    "INSERT INTO lead_events (lead_id, event_type, from_status, to_status, occurred_at) "
+                    "VALUES (?, 'status_changed', ?, ?, ?)"
+                ),
+                (lead_id, existing["status"], values["status"], now),
+            )
         db.commit()
         row = db.execute(sql("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
         return serialize(row)
