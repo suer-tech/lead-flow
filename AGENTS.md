@@ -2,16 +2,17 @@
 
 Owner update, 26 October 2026: expand acquisition throughout the day. New campaign
 ocr-russia-v3 uses 120-minute slots from09:00to21:00 Yekaterinburg, up to12
-companies/72URL attempts/70model calls per slot, eight diversified queries.
+companies/72URL attempts/100model calls per slot, eight diversified queries.
 No catch-up replay; pending checkpoints resume first. contact_ready is a separate
-status for independently verified fit/process and official contact with unknown
+status for independently verified relevant legal practice/product and suitable official business contact with unknown
 need. Owner authorizes one contextual discovery email/company, max100 distinct
 companies/local day, at least300seconds apart. Keep unknown intent unknown;
-source/contact/letter checks, one-first-letter ledger, refusals and uncertain
+Existing extraction work may remain unknown; HR/CV, press, privacy, abuse and no-reply addresses cannot be recipients. Save verified-fit companies without contacts as needs_review cards. Source/contact/letter checks, one-first-letter ledger, refusals and uncertain
 sends remain binding. CRM_DISCOVERY_OUTREACH_ENABLED allows policy-approved queue
 entries; CRM_OUTREACH_ENABLED and mailbox switches independently gate sending.
 Mailbox credentials are still absent; SMTP/IMAP remain disabled until commissioned.
 This supersedes the earlier once-daily search and qualified-only draft admission.
+Pipeline6 avoids followup searches solely to prove unmet need for a discovery question. Explicit worker.reconsider creates one new bounded review of saved, still-potential rejections and budget-interrupted prospects; it preserves the terminal source run, reuses read pages and never repeats discovery.
 
 # Lead Flow: OCR commercial validation
 

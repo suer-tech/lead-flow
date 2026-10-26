@@ -126,13 +126,14 @@ class CrmContractTests(unittest.TestCase):
         self.config['discovery_outreach'] = True
         self.runtime.assessment.update(signal_kind='profile_process', current_unmet_need=False,
             signal_date='', remaining_manual_step='')
-        self.runtime.review.update(need_quote_supports_claim=False, need_is_unmet=False)
+        self.runtime.review.update(need_quote_supports_claim=False, need_is_unmet=False, process_quote_supports_workflow=False)
         with patch.dict(os.environ, {'CRM_AUTO_APPROVE':'1','CRM_DISCOVERY_OUTREACH_ENABLED':'1'}):
             result = self.engine.run(slot='discovery-first')
         self.assertTrue(result['ok'])
         lead = self.rows('leads')[0]
         self.assertEqual('contact_ready', lead['qualification_status'])
         self.assertEqual(0, lead['intent_score'])
+        self.assertNotIn('followup', self.runtime.calls)
         letter = self.rows('outreach')[0]
         self.assertEqual('discovery', letter['purpose'])
         self.assertEqual('ready', letter['state'])
@@ -144,8 +145,24 @@ class CrmContractTests(unittest.TestCase):
     def test_discovery_still_rejects_unverified_contact_and_unfit_process(self):
         self.config['discovery_outreach'] = True
         self.runtime.assessment.update(contact_email='', contact_url='', contact_quote='')
+        self.runtime.review.update(process_quote_supports_workflow=False,contact_official=False)
         self.engine.run(slot='no-contact')
         self.assertEqual('needs_review', self.rows('leads')[0]['qualification_status'])
+        self.assertEqual([], self.rows('outreach'))
+
+    def test_discovery_does_not_admit_unfit_company_or_hr_mailbox(self):
+        self.config['discovery_outreach'] = True
+        self.runtime.review['fit_valid']=False
+        self.engine.run(slot='unfit')
+        self.assertEqual([], self.rows('leads'))
+        with self.store.db:
+            self.store.db.execute("UPDATE runs SET created='2020-01-01T00:00:00+00:00'")
+        self.runtime.review['fit_valid']=True
+        self.runtime.texts[2]='Для резюме используйте hr@pravo.example; отдел кадров.'
+        self.runtime.assessment.update(contact_email='hr@pravo.example',contact_quote=self.runtime.texts[2])
+        self.engine.run(slot='hr-is-not-a-sales-contact')
+        self.assertEqual('needs_review', self.rows('leads')[0]['qualification_status'])
+        self.assertEqual('', self.rows('leads')[0]['email'])
         self.assertEqual([], self.rows('outreach'))
 
     def test_contact_ready_cannot_make_sales_letter_or_forge_contact_provenance(self):

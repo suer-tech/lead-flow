@@ -11,7 +11,7 @@
   "sender": "ai.studio.ufa@mail.ru",
   "max_candidates": 12,
   "max_pages": 72,
-  "max_model_calls": 70,
+  "max_model_calls": 100,
   "max_signal_age_days": 180,
   "company_recheck_days": 30,
   "lease_wait_seconds": 300,

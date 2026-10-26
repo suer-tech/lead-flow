@@ -7,7 +7,7 @@ import re
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
-from .contracts import accepted_review, accepted_research_review, accepted_letter_review, compact, domain, make_draft, public_url, source_readable, stable_key, validate_assessment, validate_letter
+from .contracts import accepted_review, accepted_research_review, accepted_discovery_review, accepted_potential_review, accepted_letter_review, compact, domain, make_draft, public_url, source_readable, stable_key, validate_assessment, validate_letter
 from .store import dumps, now
 from .schedule import cycle_slot
 
@@ -20,7 +20,7 @@ def load_config(path):
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,70}", value["campaign"]):
         raise ValueError("invalid_campaign")
     for key, default, maximum in (("max_candidates", 12, 30), ("max_pages", 48, 72),
-        ("max_model_calls", 32, 70), ("max_signal_age_days", 180, 365), ("company_recheck_days", 30, 180)):
+        ("max_model_calls", 32, 140), ("max_signal_age_days", 180, 365), ("company_recheck_days", 30, 180)):
         value.setdefault(key, default)
         if type(value[key]) is not int or not 1 <= value[key] <= maximum:
             raise ValueError("invalid_" + key)
@@ -52,7 +52,7 @@ def load_config(path):
 def fingerprint(config):
     keys = ("campaign", "queries", "max_candidates", "max_pages", "max_model_calls", "max_signal_age_days")
     value = {key: config[key] for key in keys}
-    value["pipeline_contract"] = 5
+    value["pipeline_contract"] = 6
     value["discovery_outreach"] = config.get("discovery_outreach", False)
     value["research_interval_minutes"] = config.get("research_interval_minutes", 0)
     value["company_recheck_days"] = config.get("company_recheck_days", 30)
@@ -193,7 +193,8 @@ class Engine:
                 checked = json.loads(current["validation"])
             assessment, checked = self.repair_citations(run_id, candidate, assessment, checked, readable)
             repairable = any(error.startswith(("identity_", "contact_", "email_", "signal_url_", "signal_quote_"))
-                or error in ("no_readable_sources", "remaining_workflow_gap_unknown", "no_current_unmet_need") for error in checked["errors"])
+                or error == "no_readable_sources"
+                or (not self.config.get('discovery_outreach') and error in ("remaining_workflow_gap_unknown", "no_current_unmet_need")) for error in checked["errors"])
             followup = repairable and current["followup_attempts"] == 0 and self.store.db.execute(
                 "SELECT COUNT(*) FROM pages WHERE run_id=?", (run_id,)).fetchone()[0] < self.config["max_pages"]
             stage = "followup_search" if followup else "review" if checked["valid"] else "rejected"
@@ -213,7 +214,7 @@ class Engine:
             return self.qualify(run_id, current)
         if current["stage"] == "review":
             review = self.model(run_id, "critique", candidate, assessment, readable)
-            if not accepted_research_review(review):
+            if not (accepted_research_review(review) or (self.config.get('discovery_outreach') and accepted_potential_review(review))):
                 self.store.update_candidate(run_id, host, stage="rejected", review=review, error="independent_review_rejected")
                 return
             self.store.update_candidate(run_id, host, stage="write_letter", review=review)
@@ -346,7 +347,7 @@ class Engine:
         qualified = checked["eligible"] and accepted_review(review) and kind in ("explicit_need", "manual_work")
         contact_ready = bool(self.config.get("discovery_outreach") and checked["valid"]
             and checked.get("contact_valid") and review.get("contact_official") is True
-            and accepted_research_review(review))
+            and accepted_discovery_review(review))
         signal_map = {"explicit_need": "explicit_request", "manual_work": "manual_work", "hiring": "hiring", "integration_project": "company_profile"}
         scores = {"explicit_need": 85, "manual_work": 50, "integration_project": 40, "hiring": 25}
         by_url = {s["url"]: s for s in readable}
@@ -359,7 +360,7 @@ class Engine:
                 signal = "hiring" if kind == "hiring" else "company_profile"
             evidence.append({"source_url": source["url"], "quote": compact(assessment[prefix + "_quote"]),
                 "observed_at": source["fetched_at"], "published_at": source.get("published_at"), "signal": signal,
-                "interpretation": (assessment["why_fit"] if qualified else "Наблюдаемый документный процесс; текущая потребность требует проверки") if prefix == "signal" else ("Официальная компания" if prefix == "identity" else "Опубликованный контакт")})
+                "interpretation": (assessment["why_fit"] if qualified else "Подходящий профиль компании; наличие операции и потребности требует проверки") if prefix == "signal" else ("Официальная компания" if prefix == "identity" else "Опубликованный контакт")})
         unknowns = list(dict.fromkeys(assessment.get("unknowns", []) + review.get("unknowns", []) + checked["errors"] +
             ["Текущие инструменты: " + assessment.get("existing_solution", "неизвестно"),
              "Свидетельства бюджета: " + assessment.get("budget_evidence", "неизвестно"),
@@ -369,7 +370,7 @@ class Engine:
         # the CRM independently deduplicates company_domain and keeps owner edits.
         lead = {"idempotency_key": key + ":" + run_id, "company": candidate["company_name"], "company_domain": host,
             "segment": candidate["segment"], "document_types": [], "use_case": assessment["use_case"][:1500],
-            "need_summary": assessment["why_fit"][:2000] if qualified else ("Текущая потребность не подтверждена. Наблюдаемый процесс: " + assessment["use_case"])[:2000],
+            "need_summary": assessment["why_fit"][:2000] if qualified else ("Текущая потребность не подтверждена. Проверить применимость: " + assessment["use_case"])[:2000],
             "qualification_status": "qualified" if qualified else "contact_ready" if contact_ready else "needs_review",
             "fit_score": 75 if qualified else 50, "intent_score": scores.get(kind, 0) if qualified else min(25, scores.get(kind, 0)), "email": checked["email"],
             "contact_name": "", "contact_role": "", "contact_source_url": assessment["contact_url"] if checked.get("contact_valid") else None,
