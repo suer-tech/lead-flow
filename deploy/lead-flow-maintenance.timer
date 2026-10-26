@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily lead research maintenance
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Yekaterinburg
+Persistent=true
+Unit=lead-flow-maintenance.service
+
+[Install]
+WantedBy=timers.target

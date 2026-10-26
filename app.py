@@ -21,7 +21,7 @@ STATIC_DIR = BASE_DIR / "static"
 IS_VERCEL = bool(os.getenv("VERCEL"))
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 USE_POSTGRES = bool(DATABASE_URL)
-DB_PATH = Path("/tmp/leads.db") if IS_VERCEL else BASE_DIR / "leads.db"
+DB_PATH = Path(os.getenv("CRM_DB_PATH", str(Path("/tmp/leads.db") if IS_VERCEL else BASE_DIR / "leads.db")))
 
 CRM_PASSWORD = os.getenv("CRM_PASSWORD", "")
 CRM_SECRET_KEY = os.getenv("CRM_SECRET_KEY") or CRM_PASSWORD or "lead-flow-local-only"
@@ -176,7 +176,7 @@ def period_start(period: DashboardPeriod, now: datetime) -> datetime | None:
 def backfill_lead_events(db: Any) -> None:
     """Create a conservative baseline for leads that predate event tracking."""
     db.execute(
-        "UPDATE leads SET proposal_sent_at = created_at WHERE proposal_sent_at IS NULL AND status <> 'new'"
+        "UPDATE leads SET proposal_sent_at = created_at WHERE proposal_sent_at IS NULL AND status <> 'new' AND source <> 'OSINT OCR'"
     )
     db.execute(
         """
@@ -284,7 +284,7 @@ def init_database() -> None:
         db.execute("CREATE INDEX IF NOT EXISTS lead_events_occurred_at_idx ON lead_events(occurred_at)")
         db.execute("CREATE INDEX IF NOT EXISTS lead_events_lead_id_idx ON lead_events(lead_id)")
         existing_count = db.execute("SELECT COUNT(*) AS count FROM leads").fetchone()["count"]
-        if existing_count:
+        if existing_count or os.getenv("CRM_SEED_DEMO") != "1":
             backfill_lead_events(db)
             db.commit()
             return
@@ -339,8 +339,10 @@ def require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Требуется вход")
 
 
-app = FastAPI(title="Lead Flow CRM", version="1.3.0")
+app = FastAPI(title="Lead Flow CRM", version="1.4.0")
 init_database()
+from acquisition import install as install_acquisition
+install_acquisition(app, connect, sql, serialize, require_auth, USE_POSTGRES)
 
 
 @app.get("/api/health")
@@ -390,8 +392,9 @@ def logout() -> Response:
 def list_leads(
     search: str = Query(default="", max_length=200),
     lead_status: LeadStatus | None = Query(default=None, alias="status"),
+    archived: bool = Query(default=False),
 ) -> list[dict]:
-    query = "SELECT * FROM leads WHERE 1=1"
+    query = "SELECT * FROM leads WHERE " + ("archived_at IS NOT NULL" if archived else "archived_at IS NULL")
     params: list[str] = []
     if lead_status:
         query += " AND status = ?"
@@ -432,7 +435,7 @@ def dashboard(period: DashboardPeriod = Query(default="week")) -> dict:
             ).fetchall()
         ]
         funnel_rows = db.execute(
-            "SELECT status, COUNT(*) AS count FROM leads GROUP BY status"
+            "SELECT status, COUNT(*) AS count FROM leads WHERE archived_at IS NULL GROUP BY status"
         ).fetchall()
         lead_statuses = {
             row["id"]: row["status"]
@@ -557,11 +560,7 @@ def update_lead(lead_id: int, payload: LeadUpdate) -> dict:
 
 @app.delete("/api/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_auth)])
 def delete_lead(lead_id: int) -> Response:
-    with closing(connect()) as db:
-        cursor = db.execute(sql("DELETE FROM leads WHERE id = ?"), (lead_id,))
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Лид не найден")
-        db.commit()
+    app.state.acquisition_archive(lead_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

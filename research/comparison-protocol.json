@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "state": "designed_not_executed",
+  "question": "Can the alternative produce the correct business record for difficult bankruptcy documents with an acceptable correction cost?",
+  "comparators": ["Current owner OCR pipeline", "DaData generic extraction with an adequate declared schema", "A configured alternative with comparable rules", "Client's actual PAU/Rafinad/manual workflow when access is authorised"],
+  "fairness": [
+    "Same permitted input documents, field definitions and client-specific business rules",
+    "Distinguish ready-to-use product results from results after engineering/tuning; record tuning effort separately",
+    "Do not reuse benchmark holdout documents to tune either implementation",
+    "Ground truth reviewed by a knowledgeable human, disagreements recorded before scoring",
+    "Begin with synthetic or properly anonymised samples; no private client files sent to another provider without authorised data handling"
+  ],
+  "critical_cases": [
+    {"id": "final_vs_requested", "scenario": "Original claim, revised claim, partial rejection and final inclusion coexist", "check": "Use the final accepted components; exclude rejected parts and do not substitute an earlier requested total"},
+    {"id": "amount_components", "scenario": "Principal, interest, sanctions, old costs and newly awarded duty appear together", "check": "Assign components according to the agreed output contract; do not double-count the total; verify cent-exact arithmetic"},
+    {"id": "creditor_scope", "scenario": "Several creditors, debtors or cited proceedings occur in one document", "check": "Amounts, identifiers and decisions belong to the correct participant and current proceeding"},
+    {"id": "pledge", "scenario": "Pledge is requested, declined, deferred or accepted for only part of the claims", "check": "Do not infer acceptance from the word pledge; distinguish mixed claims and request review when needed"},
+    {"id": "linked_deadlines", "scenario": "Historical dates, procedure end and hearing/report directions coexist", "check": "Use the right event and conditional rule; a calculated procedure date is not automatically a scheduled hearing"},
+    {"id": "missing_evidence", "scenario": "A value is absent, ambiguous or contradictory", "check": "No invented value; explicit uncertainty/manual review preserves the usable fields"}
+  ],
+  "metrics": ["Critical semantic errors by case type", "Correct complete records", "False automatic acceptance of wrong records", "Appropriate manual-review referrals", "Minutes to a checked record in the client's system", "API spend, engineering effort and review/support cost separately"],
+  "decision": "Only a successful common-contract test supports a comparative accuracy/cost claim. Different feature lists and per-page prices alone do not. A paid pilot must test the customer's actual unresolved step.",
+  "caution": "Configured deadline offsets and EMU amount-field semantics are client contracts, not universal statements of Russian law."
+}

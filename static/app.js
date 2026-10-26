@@ -2,7 +2,7 @@ const STATUSES = [
   { id: "new", label: "Новый", color: "#8c9285" },
   { id: "proposal_sent", label: "Предложение отправлено", color: "#5c78d8" },
   { id: "interested", label: "Есть интерес", color: "#b58c1c" },
-  { id: "follow_up", label: "Дожим", color: "#b6632f" },
+  { id: "follow_up", label: "Ожидаем ответ", color: "#b6632f" },
   { id: "diagnostics", label: "Диагностика", color: "#8a65c7" },
   { id: "proposal", label: "КП", color: "#d1773f" },
   { id: "negotiations", label: "Переговоры", color: "#257f7b" },
@@ -100,6 +100,7 @@ function cardTemplate(lead) {
         <h3>${escapeHtml(lead.company)}</h3>
         <span class="source-badge">${escapeHtml(lead.source || "лид")}</span>
       </div>
+      ${lead.need_summary ? `<p class="offer">${escapeHtml(lead.need_summary)}</p><small class="qualification">Соответствие: ${lead.fit_score ?? "неизвестно"} · Сигнал спроса: ${lead.intent_score ?? "неизвестно"}</small>` : ""}
       ${lead.vacancy ? `<p class="vacancy">${escapeHtml(lead.vacancy)}</p>` : ""}
       ${lead.offer ? `<p class="offer">${escapeHtml(lead.offer)}</p>` : ""}
       <div class="card-footer">
@@ -136,6 +137,7 @@ function render() {
     <div class="metric"><strong>${pipeline ? formatMoney(pipeline) : "—"}</strong><span>в воронке</span></div>`;
 
   bindBoardEvents();
+  if (document.querySelector("#showArchive").checked) document.querySelectorAll(".lead-card").forEach(c => c.draggable = false);
 }
 
 function metricCard(value, label, note = "") {
@@ -208,11 +210,13 @@ async function loadDashboard() {
 async function switchView(view) {
   state.view = view;
   const isDashboard = view === "dashboard";
-  boardView.classList.toggle("hidden", isDashboard);
+  const isAutomation = view === "automation";
+  document.querySelector("#automationView").classList.toggle("hidden", !isAutomation);
+  boardView.classList.toggle("hidden", view !== "board");
   dashboardView.classList.toggle("hidden", !isDashboard);
-  searchWrap.classList.toggle("hidden", isDashboard);
-  addLeadButton.classList.toggle("hidden", isDashboard);
-  metrics.classList.toggle("hidden", isDashboard);
+  searchWrap.classList.toggle("hidden", view !== "board");
+  addLeadButton.classList.toggle("hidden", view !== "board");
+  metrics.classList.toggle("hidden", view !== "board");
   document.querySelectorAll(".view-button").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   document.querySelector("#heroEyebrow").textContent = isDashboard ? "Аналитика продаж" : "Воронка продаж";
   document.querySelector("#heroTitle").textContent = isDashboard ? "Результаты и эффективность" : "Лиды и следующие шаги";
@@ -220,6 +224,7 @@ async function switchView(view) {
     ? "Сколько лидов найдено, обработано и доведено до результата."
     : "От первого контакта до оплаченного AI-проекта — без потерянных договорённостей.";
   if (isDashboard) await loadDashboard();
+  if (isAutomation) { document.querySelector("#heroTitle").textContent = "Поиск компаний и переписка"; await loadAutomation(); }
 }
 
 function bindBoardEvents() {
@@ -251,7 +256,7 @@ function bindBoardEvents() {
 
 async function moveLead(id, status) {
   const lead = state.leads.find((item) => item.id === id);
-  if (!lead || lead.status === status) return;
+  if (!lead || lead.archived_at || lead.status === status) return;
   const previous = lead.status;
   lead.status = status;
   render();
@@ -267,6 +272,8 @@ async function moveLead(id, status) {
 
 function resetForm() {
   form.reset();
+  document.querySelector("#researchDetail").classList.add("hidden");
+  document.querySelector("#researchDetail").replaceChildren();
   form.elements.source.value = "hh.ru";
   form.elements.status.value = "new";
   form.elements.id.value = "";
@@ -308,6 +315,7 @@ function openEdit(id) {
     sourceLink.classList.add("hidden");
   }
   dialog.showModal();
+  loadResearch(id);
 }
 
 function formPayload() {
@@ -340,13 +348,13 @@ form.addEventListener("submit", async (event) => {
 document.querySelector("#deleteLeadButton").addEventListener("click", async () => {
   const id = Number(form.elements.id.value);
   const lead = state.leads.find((item) => item.id === id);
-  if (!lead || !window.confirm(`Удалить лид «${lead.company}»?`)) return;
+  if (!lead || !window.confirm(`Убрать «${lead.company}» в архив и исключить из новых писем?`)) return;
   try {
     await api(`/api/leads/${id}`, { method: "DELETE" });
     state.leads = state.leads.filter((item) => item.id !== id);
     dialog.close();
     render();
-    showNotice("Лид удалён");
+    showNotice("Лид в архиве; повторные письма исключены");
   } catch (error) { showNotice(error.message, true); }
 });
 
@@ -400,7 +408,7 @@ logoutButton.addEventListener("click", async () => {
 
 async function loadLeads() {
   try {
-    state.leads = await api("/api/leads");
+    state.leads = await api(`/api/leads?archived=${document.querySelector("#showArchive").checked}`);
     render();
   } catch (error) {
     if (error.status === 401) {
@@ -430,3 +438,49 @@ async function bootstrap() {
 }
 
 bootstrap();
+const DELIVERY_LABELS = {draft:"Черновик", ready:"Готово к отправке", inflight:"Отправка — ждём подтверждение", accepted:"Принято почтовым сервером", uncertain:"Результат неизвестен — нужна сверка", rejected:"Почтовый сервер отклонил", failed_before_send:"Ошибка до отправки", cancelled:"Отменено"};
+const QUALIFICATION_LABELS = {unknown:"Потребность не подтверждена",researching:"Исследование",qualified:"Есть подтверждённые сигналы",not_fit:"Не подходит",needs_review:"Нужна проверка"};
+function safeLink(value, label) {
+  try { const url = new URL(value); if (!["https:", "http:"].includes(url.protocol)) return escapeHtml(label); return `<a target="_blank" rel="noopener noreferrer" href="${escapeHtml(url.href)}">${escapeHtml(label)}</a>`; }
+  catch { return escapeHtml(label); }
+}
+async function loadResearch(id) {
+  const area = document.querySelector("#researchDetail");
+  try {
+    const data = await api(`/api/leads/${id}/research`);
+    if (Number(form.elements.id.value) !== id || !dialog.open) return;
+    const lead = data.lead;
+    area.classList.remove("hidden");
+    area.innerHTML = `<h3>Почему этой компании может быть нужен OCR</h3>
+      <p><strong>${escapeHtml(QUALIFICATION_LABELS[lead.qualification_status] || lead.qualification_status)}</strong> · Соответствие ${lead.fit_score ?? "неизвестно"} / 100 · Сигнал спроса ${lead.intent_score ?? "неизвестно"} / 100</p>
+      <p>${escapeHtml(lead.segment || "Сегмент пока не определён")}</p>
+      <p>${escapeHtml(lead.need_summary || "Исследование потребности пока не добавлено")}</p>
+      ${lead.use_case ? `<p>${escapeHtml(lead.use_case)}</p>` : ""}
+      ${lead.limitations ? `<p class="research-warning">Неизвестно / требует проверки: ${escapeHtml(lead.limitations)}</p>` : ""}
+      ${lead.contact_source_url ? `<p>${safeLink(lead.contact_source_url, "Источник контакта")}</p>` : ""}
+      ${lead.archived_at ? `<p class="research-warning">В архиве: ${escapeHtml(lead.archive_reason)} · ${escapeHtml(formatFullDate(lead.archived_at))}</p>` : ""}
+      <h4>Свидетельства (${data.evidence.length})</h4>
+      ${data.evidence.map(e=>`<article class="evidence-item"><blockquote>${escapeHtml(e.quote)}</blockquote><p>${escapeHtml(e.interpretation)}</p><small>${safeLink(e.source_url,"Открыть источник")} · Проверено ${escapeHtml(formatFullDate(e.observed_at))} · ${escapeHtml(e.signal)}</small></article>`).join("") || '<p>Пока нет сохранённых источников. Отрасль сама по себе не подтверждает спрос.</p>'}
+      <h4>Письма (${data.outreach.length})</h4>
+      ${data.outreach.map(m=>`<article class="evidence-item"><strong>${escapeHtml(m.subject)}</strong><p>${escapeHtml(DELIVERY_LABELS[m.state] || m.state)} · ${escapeHtml(m.recipient)}</p><pre>${escapeHtml(m.body)}</pre><small>Основание контакта: ${escapeHtml(m.basis_evidence)}</small>${m.state==="accepted"?'<p>Это подтверждение приёма сервером, не доставки или прочтения.</p>':""}${["draft","ready"].includes(m.state)&&!lead.archived_at?`<div class="draft-actions">${m.state==="draft"?`<button type="button" class="button primary" data-outreach="${escapeHtml(m.id)}" data-action="approve">Разрешить отправку</button>`:""}<button type="button" class="button ghost" data-outreach="${escapeHtml(m.id)}" data-action="cancel">Отменить письмо</button></div>`:""}</article>`).join("") || '<p>Писем пока нет.</p>'}
+      <h4>Ответы (${data.replies.length})</h4>
+      ${data.replies.map(r=>`<article class="evidence-item"><strong>${escapeHtml(r.subject)}</strong><p>${escapeHtml(r.from_email)} · ${escapeHtml(formatFullDate(r.received_at))} · ${escapeHtml(r.classification)}</p><pre>${escapeHtml(r.body)}</pre></article>`).join("") || '<p>Ответов пока нет.</p>'}`;
+    area.querySelectorAll("[data-outreach]").forEach(button=>button.addEventListener("click",async()=>{
+      button.disabled=true;
+      try { await api(`/api/outreach/${button.dataset.outreach}/review`,{method:"POST",body:JSON.stringify({action:button.dataset.action})}); await loadResearch(id); }
+      catch(error) {showNotice(error.message,true);button.disabled=false;}
+    }));
+  } catch(error) { if(Number(form.elements.id.value)===id) showNotice(`Не удалось прочитать исследование: ${error.message}`,true); }
+}
+async function loadAutomation() {
+  const area=document.querySelector("#automationView");area.textContent="Загрузка состояния…";
+  try {
+    const data=await api("/api/automation");
+    area.innerHTML=`<h2>Состояние интеграции</h2><div class="dashboard-cards">${metricCard(data.agent_configured?"Настроен":"Не подключён","Доступ агента")}${metricCard(data.outreach_enabled&&data.sender_configured?"Разрешена":"Отключена","Отправка писем")}${metricCard(data.unmatched_replies,"Ответов на проверку")}${metricCard(data.archived_leads,"Лидов в архиве")}</div>
+      <p>${data.worker_seen?"Последние запуски сервера показаны ниже.":"Серверный агент ещё не присылал результаты работы."} Это состояние журнала, а не подтверждение включённого расписания.</p>
+      <p>Автоматическое разрешение отправки: ${data.auto_approve_enabled?"включено для контактов, прошедших правила кампании":"выключено"}. Архив без ответа: ${data.no_reply_archive_enabled?`через ${data.no_reply_days} дней`:"выключен"}.</p>
+      <h3>Очередь писем</h3><div class="dashboard-cards">${Object.entries(data.outreach).map(([k,v])=>metricCard(v,DELIVERY_LABELS[k]||k)).join("") || '<p>Писем в очереди нет.</p>'}</div>
+      <h3>Последние запуски</h3>${data.runs.map(r=>`<article class="evidence-item"><strong>${escapeHtml(r.state)}</strong> · ${escapeHtml(formatFullDate(r.updated_at))}<p>${escapeHtml(r.summary)}</p></article>`).join("")||'<p>Запуски пока не зарегистрированы.</p>'}`;
+  }catch(error){area.textContent=`Не удалось загрузить состояние: ${error.message}`;}
+}
+document.querySelector("#showArchive").addEventListener("change",loadLeads);
