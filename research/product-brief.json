@@ -67,11 +67,16 @@
     "sample_size": null,
     "document_corpus": null,
     "independently_reproduced_by_agent": false,
-    "permitted_claim": "На нашем бенчмарке обработка одного документа сократилась с 30 минут до 1 минуты; оценка качества извлечения — 95%.",
+    "permitted_claim": "По нашему бенчмарку время обработки одного документа сократилось с 30 минут до 1 минуты, а оценка качества извлечения составила 95%.",
     "limits": [
       "Do not invent a field/document accuracy denominator, sample, corpus or independent audit",
       "Do not generalize to every client document or promise no human validation",
       "Automatic data extraction removes manual transfer, not every possible manual action"
     ]
+  },
+  "owner_reported_customization": {
+    "source": "Owner request26Oct2026: not only listed fields, other data on customer request",
+    "offer": "Additional desired data present in the document can be included in individual field configuration and checked on samples",
+    "not_a_claim_of_ready_universal_document_support": true
   }
 }

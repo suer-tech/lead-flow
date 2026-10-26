@@ -15,7 +15,7 @@ from .probes.letter_draft import run_probe
 from .runtime import CrmClient
 from .store import now
 
-VERSION='ai-benchmark-v1'
+VERSION='ai-benchmark-v2'
 
 
 def content_hash(value):
@@ -42,12 +42,15 @@ def refresh(config_path,directory):
         plan=[];seen=set()
         with closing(sqlite3.connect(Path(config['database']).as_uri()+'?mode=ro',uri=True)) as db:
             db.row_factory=sqlite3.Row
+            overrides={}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='outreach_copy_overrides'").fetchone():
+                overrides={r['outreach_id']:json.loads(r['draft_json']) for r in db.execute('SELECT outreach_id,draft_json FROM outreach_copy_overrides')}
             for row in db.execute('SELECT c.*,r.created FROM candidates c JOIN runs r ON r.id=c.run_id WHERE c.draft_ack IS NOT NULL ORDER BY r.created DESC,c.domain'):
                 ack=json.loads(row['draft_ack']);ident=ack.get('id')
                 if not isinstance(ident,str) or not re.fullmatch('[a-f0-9]{32}',ident) or ident in attempted or ident in seen:continue
                 result=json.loads(row['result']);seen.add(ident)
                 plan.append({'id':ident,'source_run':row['run_id'],'domain':row['domain'],
-                    'company':result['lead']['company'],'old_hash':content_hash(result['draft'])})
+                    'company':result['lead']['company'],'old_hash':content_hash(overrides.get(ident,result['draft']))})
         if len(plan)>100:raise ValueError('Revision batch too large')
         save(plan_path,plan)
     crm=CrmClient(config);results=[]
