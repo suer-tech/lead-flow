@@ -1,5 +1,6 @@
 """Actual HTTP contract against an isolated app, never the Vercel database."""
 from copy import deepcopy
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import io
@@ -120,6 +121,48 @@ class CrmContractTests(unittest.TestCase):
         self.assertIsNone(lead["contact_source_url"])
         self.assertEqual([], self.rows("outreach"))
         self.assertIsNone(json.loads(self.store.rows("SELECT result FROM candidates")[0]["result"])["draft"])
+
+    def test_unknown_need_can_make_one_discovery_letter_without_promoting_intent(self):
+        self.config['discovery_outreach'] = True
+        self.runtime.assessment.update(signal_kind='profile_process', current_unmet_need=False,
+            signal_date='', remaining_manual_step='')
+        self.runtime.review.update(need_quote_supports_claim=False, need_is_unmet=False)
+        with patch.dict(os.environ, {'CRM_AUTO_APPROVE':'1','CRM_DISCOVERY_OUTREACH_ENABLED':'1'}):
+            result = self.engine.run(slot='discovery-first')
+        self.assertTrue(result['ok'])
+        lead = self.rows('leads')[0]
+        self.assertEqual('contact_ready', lead['qualification_status'])
+        self.assertEqual(0, lead['intent_score'])
+        letter = self.rows('outreach')[0]
+        self.assertEqual('discovery', letter['purpose'])
+        self.assertEqual('ready', letter['state'])
+        # A prepared queue does not enable SMTP/claims.
+        self.assertEqual(409, self.client.post('/api/agent/outreach/claim', headers={'Authorization':'Bearer '+self.token}).status_code)
+        self.assertTrue(self.engine.run(slot='next-search')['ok'])
+        self.assertEqual(1, len(self.rows('outreach')))
+
+    def test_discovery_still_rejects_unverified_contact_and_unfit_process(self):
+        self.config['discovery_outreach'] = True
+        self.runtime.assessment.update(contact_email='', contact_url='', contact_quote='')
+        self.engine.run(slot='no-contact')
+        self.assertEqual('needs_review', self.rows('leads')[0]['qualification_status'])
+        self.assertEqual([], self.rows('outreach'))
+
+    def test_contact_ready_cannot_make_sales_letter_or_forge_contact_provenance(self):
+        self.config['discovery_outreach'] = True
+        self.runtime.assessment.update(signal_date='')
+        self.engine.run(slot='discovery-card')
+        row = self.rows('leads')[0]
+        # Remove the first draft only in this disposable fixture, testing the
+        # purpose gate separately from first-letter deduplication.
+        with closing(self.module.connect()) as db:
+            db.execute('DELETE FROM outreach');db.commit()
+        payload={'idempotency_key':'wrong-sales-purpose','lead_id':row['id'],'subject':'Process question',
+            'body':'Is this process relevant for your team?', 'contact_basis':'owner_review','basis_evidence':'Owner authorized a discovery question'}
+        self.assertEqual(409,self.client.post('/api/agent/drafts',json=payload,headers={'Authorization':'Bearer '+self.token}).status_code)
+        saved=json.loads(self.store.rows('SELECT result FROM candidates')[0]['result'])['lead']
+        saved.update(idempotency_key='forged-contact-proof',company_domain='different.example')
+        self.assertEqual(422,self.client.post('/api/agent/leads',json=saved,headers={'Authorization':'Bearer '+self.token}).status_code)
 
 
 if __name__ == "__main__":

@@ -3,10 +3,26 @@
   "topic": "Commercial validation of Russian bankruptcy document extraction",
   "separate_from_general_demand_cycles": true,
   "roles": [
-    {"role": "buyer_process", "question": "Who performs this document work, with what volume, error exposure and budget ownership?", "deliverable": "Source-grounded process, manual steps, existing tools, dated pain signals and unknowns"},
-    {"role": "alternatives", "question": "How can the buyer solve this today using existing software, employees or integration?", "deliverable": "Verified features, prices with units, current scope, evidence of resolved and unresolved needs"},
-    {"role": "distribution", "question": "Who already has access to these buyers and could sell or embed our component?", "deliverable": "Named partner candidates, customer overlap, possible incentive and missing validation"},
-    {"role": "critic", "question": "Why would the buyer not pay us, and what evidence would disprove this offer?", "deliverable": "Contradictions, switching costs, data/security constraints, technical gaps and kill criteria"}
+    {
+      "role": "buyer_process",
+      "question": "Who performs this document work, with what volume, error exposure and budget ownership?",
+      "deliverable": "Source-grounded process, manual steps, existing tools, dated pain signals and unknowns"
+    },
+    {
+      "role": "alternatives",
+      "question": "How can the buyer solve this today using existing software, employees or integration?",
+      "deliverable": "Verified features, prices with units, current scope, evidence of resolved and unresolved needs"
+    },
+    {
+      "role": "distribution",
+      "question": "Who already has access to these buyers and could sell or embed our component?",
+      "deliverable": "Named partner candidates, customer overlap, possible incentive and missing validation"
+    },
+    {
+      "role": "critic",
+      "question": "Why would the buyer not pay us, and what evidence would disprove this offer?",
+      "deliverable": "Contradictions, switching costs, data/security constraints, technical gaps and kill criteria"
+    }
   ],
   "orchestrator": "Bind all roles to the same commercial question. Request focused child checks only to close a material unanswered question. Separate vendor claims, independent customer evidence, public intent and actual responses. Execute models sequentially under the existing research lease.",
   "evidence_rules": [
@@ -24,9 +40,23 @@
     "Record a blocked or inaccessible source as missing evidence; never replace it with an invented quote"
   ],
   "first_campaign_hypothesis": "A legal firm or financial-manager team with costly repeated manual court-document entry or corrections despite existing software will pay for a bounded pilot, if measurable correction time and data handling are acceptable. Whether to complement or replace a module must be learned from that customer's constraints.",
-  "experiment": {"initial_company_review_target": 20, "target_buyer_conversations": 5, "first_success": "One paid pilot with agreed acceptance criteria", "note": "Targets for learning, not a promised conversion rate or quota requiring weak contacts"},
-  "measure": ["Verified fit and current pain by source", "Human responses excluding auto-replies", "Confirmed volume and current cost", "Access to decision maker", "Pilot offers and payments", "Delivery hours, model spend and review cost", "Reasons for rejection"],
+  "experiment": {
+    "initial_company_review_target": 20,
+    "target_buyer_conversations": 5,
+    "first_success": "One paid pilot with agreed acceptance criteria",
+    "note": "Targets for learning, not a promised conversion rate or quota requiring weak contacts"
+  },
+  "measure": [
+    "Verified fit and current pain by source",
+    "Human responses excluding auto-replies",
+    "Confirmed volume and current cost",
+    "Access to decision maker",
+    "Pilot offers and payments",
+    "Delivery hours, model spend and review cost",
+    "Reasons for rejection"
+  ],
   "first_outreach": "One contextual question about the observed process; disclose own role and do not invent a client history, savings, benchmark or relationship.",
   "reply_policy": "Distinguish interest, clarification, no need, existing solution, no budget, wrong person, auto-reply, bounce and ambiguous response. Preserve learning from refusals while removing the card from the active pipeline and suppressing renewed outreach.",
-  "schedule_policy": "Daily incremental company search; deeper competitor refresh when there is a material unknown or relevant change. Do not repeatedly download the whole market daily. No schedule is enabled by this document."
+  "schedule_policy": "Incremental company search in two-hour slots from 09:00 to 21:00 Asia/Yekaterinburg; up to 12 candidates per slot, no catch-up replay, shared Iva research lease. One initial discovery email per company, at least five minutes apart, maximum 100 companies per local day. SMTP remains disabled until mailbox commissioning.",
+  "contact_ready_policy": "A verified company, supported concrete document workflow, independently confirmed fit and official business email can qualify as contact_ready for one owner-authorized discovery question. Current unmet need, budget and buying intent remain unknown. Never mark it qualified merely to send a letter. All first letters require independent review; source/contact failures keep only the research card."
 }

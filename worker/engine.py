@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from .contracts import accepted_review, accepted_research_review, accepted_letter_review, compact, domain, make_draft, public_url, source_readable, stable_key, validate_assessment, validate_letter
 from .store import dumps, now
+from .schedule import cycle_slot
 
 
 def load_config(path):
@@ -30,6 +31,12 @@ def load_config(path):
     value.setdefault("mode", "preview")
     value.setdefault("timezone", "Asia/Yekaterinburg")
     value.setdefault("lease_wait_seconds", 300)
+    value.setdefault("research_interval_minutes", 0)
+    value.setdefault("discovery_outreach", False)
+    if type(value["research_interval_minutes"]) is not int or value["research_interval_minutes"] not in (0, 60, 120, 180, 240):
+        raise ValueError("invalid_research_interval_minutes")
+    if type(value["discovery_outreach"]) is not bool:
+        raise ValueError("invalid_discovery_outreach")
     if type(value["lease_wait_seconds"]) is not int or not 0 <= value["lease_wait_seconds"] <= 600:
         raise ValueError("invalid_lease_wait_seconds")
     if type(value["enabled"]) is not bool or value["mode"] not in ("preview", "ingest"):
@@ -45,7 +52,9 @@ def load_config(path):
 def fingerprint(config):
     keys = ("campaign", "queries", "max_candidates", "max_pages", "max_model_calls", "max_signal_age_days")
     value = {key: config[key] for key in keys}
-    value["pipeline_contract"] = 4
+    value["pipeline_contract"] = 5
+    value["discovery_outreach"] = config.get("discovery_outreach", False)
+    value["research_interval_minutes"] = config.get("research_interval_minutes", 0)
     value["company_recheck_days"] = config.get("company_recheck_days", 30)
     root = Path(__file__).resolve().parents[1] / "research"
     value["brief_versions"] = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
@@ -83,7 +92,7 @@ class Engine:
             if query["candidate_quota"] is None:
                 remaining = self.store.db.execute("SELECT COUNT(*) FROM queries WHERE run_id=? AND state NOT IN ('done','skipped')", (run_id,)).fetchone()[0]
                 quota = min(4, max(1, (capacity + remaining - 1) // remaining))
-                excluded = list(dict.fromkeys([*known, *history]))[:100]
+                excluded = list(dict.fromkeys([*known, *history]))[:4096]
                 with self.store.db:
                     self.store.db.execute("UPDATE queries SET candidate_quota=?,search_exclusions=? WHERE run_id=? AND position=?",
                         (quota, dumps(excluded), run_id, query["position"]))
@@ -335,6 +344,9 @@ class Engine:
         host = candidate["company_domain"]
         kind = assessment["signal_kind"]
         qualified = checked["eligible"] and accepted_review(review) and kind in ("explicit_need", "manual_work")
+        contact_ready = bool(self.config.get("discovery_outreach") and checked["valid"]
+            and checked.get("contact_valid") and review.get("contact_official") is True
+            and accepted_research_review(review))
         signal_map = {"explicit_need": "explicit_request", "manual_work": "manual_work", "hiring": "hiring", "integration_project": "company_profile"}
         scores = {"explicit_need": 85, "manual_work": 50, "integration_project": 40, "hiring": 25}
         by_url = {s["url"]: s for s in readable}
@@ -358,19 +370,23 @@ class Engine:
         lead = {"idempotency_key": key + ":" + run_id, "company": candidate["company_name"], "company_domain": host,
             "segment": candidate["segment"], "document_types": [], "use_case": assessment["use_case"][:1500],
             "need_summary": assessment["why_fit"][:2000] if qualified else ("Текущая потребность не подтверждена. Наблюдаемый процесс: " + assessment["use_case"])[:2000],
-            "qualification_status": "qualified" if qualified else "needs_review",
+            "qualification_status": "qualified" if qualified else "contact_ready" if contact_ready else "needs_review",
             "fit_score": 75 if qualified else 50, "intent_score": scores.get(kind, 0) if qualified else min(25, scores.get(kind, 0)), "email": checked["email"],
             "contact_name": "", "contact_role": "", "contact_source_url": assessment["contact_url"] if checked.get("contact_valid") else None,
             "evidence": evidence, "limitations": "; ".join(unknowns)[:3000]}
         draft = {"idempotency_key": key + ":initial", **make_draft(candidate, proposal),
-            "contact_basis": "owner_review", "basis_evidence": "Черновик: публичный контакт и подтвержденный сигнал не равны разрешению на рассылку; требуется проверка основания обращения."} if proposal is not None else None
+            **({"purpose": "discovery"} if self.config.get("discovery_outreach") else {}),
+            "contact_basis": "owner_review", "basis_evidence": (
+                "Владелец разрешил одно первое обращение компании для выяснения потребности; проверены профиль, документный процесс, официальный контакт и текст. Интерес к покупке не подтверждён."
+                if self.config.get("discovery_outreach") else
+                "Черновик: публичный контакт и подтвержденный сигнал не равны разрешению на рассылку; требуется проверка основания обращения.")} if proposal is not None else None
         self.store.update_candidate(run_id, host, stage=stage, review=review, result={"lead": lead, "draft": draft})
 
     def run(self, slot=None, scheduled=False):
         if scheduled and not self.config["enabled"]:
             return {"state": "disabled", "email_sending": False}
         with self.store.exclusive():
-            row = self.store.start(self.config, slot or self.clock().date().isoformat(), fingerprint(self.config))
+            row = self.store.start(self.config, slot or cycle_slot(self.config, self.clock()), fingerprint(self.config))
             run_id = row["id"]
             if row.get("saved_result_only"):
                 return {"ok": True, "saved_result_only": True, "warning": "completed_run_uses_saved_configuration", **self.store.summary(run_id)}
@@ -462,7 +478,8 @@ class Engine:
         if type(ack.get("lead_id")) is not int or ack["lead_id"] < 1:
             raise ValueError("crm_lead_ack_missing")
         self.store.update_candidate(run_id, row["domain"], lead_ack=ack)
-        if payload["lead"]["qualification_status"] != "qualified":
+        permitted = ("qualified", "contact_ready") if (payload.get("draft") or {}).get("purpose") == "discovery" else ("qualified",)
+        if payload["lead"]["qualification_status"] not in permitted:
             self.store.update_candidate(run_id, row["domain"], stage="review_needed")
             return
         if payload.get("draft") is None:
@@ -470,7 +487,7 @@ class Engine:
             return
         if type(ack.get("initial_draft_allowed")) is not bool:
             raise ValueError("crm_contract_missing_initial_draft_permission")
-        if ack.get("qualification_status") != "qualified" or not ack["initial_draft_allowed"]:
+        if ack.get("qualification_status") not in permitted or not ack["initial_draft_allowed"]:
             # An original/replayed ingestion is not permission to contact again.
             self.store.update_candidate(run_id, row["domain"], stage="known_company")
             return

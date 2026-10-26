@@ -82,7 +82,7 @@ class Store:
         recent = self.rows("""SELECT c.domain,MAX(r.created) AS seen FROM candidates c JOIN runs r ON r.id=c.run_id
             WHERE r.campaign=? AND r.created>=? AND r.state IN ('completed','completed_with_gaps')
             AND c.stage IN ('preview','published','suppressed','known_company','review_needed','letter_review_needed','crm_review_needed','rejected','draft_rejected')
-            GROUP BY c.domain ORDER BY seen DESC,c.domain LIMIT 100""", (config["campaign"], cutoff))
+            GROUP BY c.domain ORDER BY seen DESC,c.domain LIMIT 4096""", (config["campaign"], cutoff))
         excluded = [row["domain"] for row in recent]
         with self.db:
             self.db.execute("INSERT INTO runs(id,campaign,slot,config_hash,state,created,updated,excluded_domains) VALUES(?,?,?,?,?,?,?,?)",

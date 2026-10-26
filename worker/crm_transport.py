@@ -6,6 +6,7 @@ worker idempotency keys/checkpoints, not this transport, govern later retries.
 import io
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import stat
@@ -14,7 +15,8 @@ from urllib.error import HTTPError, URLError
 
 ORIGIN = "https://lead-flow-ten-virid.vercel.app"
 SOCKET = Path("/run/lead-flow-crm.sock")
-PATHS = frozenset(("/api/agent/leads", "/api/agent/drafts"))
+PATHS = frozenset(("/api/agent/leads", "/api/agent/drafts", "/api/agent/outreach/claim",
+    "/api/agent/replies", "/api/agent/heartbeat", "/api/agent/maintenance"))
 MAX_BYTES = 128 * 1024
 CONNECT_SECONDS = 3
 TOTAL_SECONDS = 35
@@ -30,7 +32,8 @@ def validate_config(config):
 
 
 def encode_request(path, payload):
-    if path not in PATHS or not isinstance(payload, dict):
+    allowed = isinstance(path, str) and (path in PATHS or re.fullmatch(r"/api/agent/outreach/[a-f0-9]{32}/result", path) is not None)
+    if not allowed or not isinstance(payload, dict):
         raise ValueError("unsupported_crm_request")
     data = json.dumps({"path": path, "payload": payload}, ensure_ascii=False,
                       separators=(",", ":"), allow_nan=False).encode("utf-8")

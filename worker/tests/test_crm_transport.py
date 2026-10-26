@@ -80,7 +80,9 @@ class CrmTransportTests(unittest.TestCase):
                 load_config(path)
 
     def test_request_paths_bodies_and_size_are_bounded(self):
-        for path in ("/api/agent/outreach/claim", "/api/agent/replies", "/api/agent/leads?x=1",
+        for path in ("/api/agent/outreach/claim", "/api/agent/replies", "/api/agent/outreach/"+'f'*32+"/result"):
+            self.assertTrue(encode_request(path, {}))
+        for path in ("/api/agent/outreach/wrong/result", "/api/agent/replies?x=1", "/api/agent/leads?x=1",
                      "/api/agent/leads/", ORIGIN + "/api/agent/leads", "//evil/x", "/api/agent/../leads"):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 encode_request(path, {})

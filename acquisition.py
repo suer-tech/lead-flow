@@ -15,12 +15,13 @@ from contextlib import contextmanager, closing
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
-QUALIFICATIONS = Literal["unknown", "researching", "qualified", "not_fit", "needs_review"]
+QUALIFICATIONS = Literal["unknown", "researching", "qualified", "contact_ready", "not_fit", "needs_review"]
 
 
 class StrictModel(BaseModel):
@@ -76,6 +77,7 @@ class Draft(StrictModel):
     lead_id: int = Field(gt=0)
     subject: str = Field(min_length=1, max_length=250)
     body: str = Field(min_length=10, max_length=8000)
+    purpose: Literal["sales", "discovery"] = "sales"
     contact_basis: Literal["unknown", "explicit_request", "consent", "existing_relationship", "owner_review"]
     basis_evidence: str = Field(min_length=10, max_length=2000)
 
@@ -144,6 +146,16 @@ def contact_digest(row):
     return digest({key:row.get(key) or '' for key in ('email','contact_source_url','contact_name','contact_role')})
 
 
+def qualification_allows_letter(row, purpose="sales"):
+    return row["qualification_status"] == "qualified" or (
+        purpose == "discovery" and row["qualification_status"] == "contact_ready")
+
+
+def official_host(url, domain):
+    host = (urlsplit(str(url)).hostname or "").lower().removeprefix("www.")
+    return host == domain or host.endswith("." + domain)
+
+
 def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> None:
     """Register additive tables and routes without importing application secrets."""
     with closing(connect()) as db:
@@ -177,6 +189,10 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
             db.execute('ALTER TABLE acquisition_keys ADD COLUMN IF NOT EXISTS original_created INTEGER')
         elif 'original_created' not in {row['name'] for row in db.execute('PRAGMA table_info(acquisition_keys)')}:
             db.execute('ALTER TABLE acquisition_keys ADD COLUMN original_created INTEGER')
+        if use_postgres:
+            db.execute("ALTER TABLE outreach ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'sales'")
+        elif 'purpose' not in {row['name'] for row in db.execute('PRAGMA table_info(outreach)')}:
+            db.execute("ALTER TABLE outreach ADD COLUMN purpose TEXT NOT NULL DEFAULT 'sales'")
         db.execute("CREATE INDEX IF NOT EXISTS outreach_state_idx ON outreach(state, created_at)")
         db.commit()
 
@@ -244,7 +260,7 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
         # Shared recipient also prevents two company cards contacting one inbox.
         shared = bool(row['email'] and db.execute(sql('SELECT id FROM outreach WHERE LOWER(recipient)=? LIMIT 1'), (row['email'].lower(),)).fetchone())
         allowed = bool(not row['archived_at'] and not suppressed and not existing and not shared
-            and row['status'] == 'new' and row['qualification_status'] == 'qualified' and row['email'] and row['contact_source_url'])
+            and row['status'] == 'new' and qualification_allows_letter(row, 'discovery') and row['email'] and row['contact_source_url'])
         return {'lead_id':row['id'], 'created':created, 'replayed':replayed,
             'original_created':original_created, 'qualification_status':row['qualification_status'],
             'research_updated_at':row['research_updated_at'],
@@ -261,6 +277,14 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
                 raise HTTPException(422, "Квалификация требует свидетельств, потребности и отдельных оценок")
             if not any(e.signal in {"explicit_request", "procurement", "manual_work", "complaint"} for e in payload.evidence):
                 raise HTTPException(422, "Профиль компании или вакансия сами по себе не подтверждают потребность")
+        if payload.qualification_status == "contact_ready":
+            contact_url = str(payload.contact_source_url or "")
+            if (not payload.email or not payload.use_case or (payload.fit_score or 0) < 50
+                    or payload.intent_score is None or payload.intent_score > 25 or len(payload.evidence) < 2
+                    or not official_host(contact_url, payload.company_domain)
+                    or not any(str(e.source_url) == contact_url and payload.email.lower() in e.quote.lower() for e in payload.evidence)
+                    or not any(official_host(e.source_url, payload.company_domain) and e.signal == 'company_profile' for e in payload.evidence)):
+                raise HTTPException(422, "Для уточнения потребности нужны проверенные профиль, процесс и официальный контакт; интерес к покупке остаётся неизвестным")
         if payload.email and not payload.contact_source_url:
             raise HTTPException(422, "Для контакта нужен источник")
         for item in payload.evidence:
@@ -299,7 +323,7 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
                         fields['research_contact_hash'] = contact_digest(data)
                     db.execute(sql('UPDATE leads SET '+','.join(key+'=?' for key in fields)+' WHERE id=?'), [*fields.values(),lead_id])
                     if payload.qualification_status != 'qualified':
-                        db.execute(sql("UPDATE outreach SET state='draft',approved_at=NULL,updated_at=? WHERE lead_id=? AND state='ready'"), (now(),lead_id))
+                        db.execute(sql("UPDATE outreach SET state='draft',approved_at=NULL,updated_at=? WHERE lead_id=? AND state='ready' AND (purpose<>'discovery' OR ?<>'contact_ready')"), (now(),lead_id,payload.qualification_status))
                     event(db,lead_id,'research_refreshed',row['status'],row['status'])
             else:
                 timestamp = now()
@@ -338,8 +362,8 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
                 raise HTTPException(409, "Контакт исключён из работы")
             if not row["email"] or not row["contact_source_url"]:
                 raise HTTPException(422, "Нет подтверждённого контакта")
-            if row["qualification_status"] != "qualified":
-                raise HTTPException(409, "Потребность ещё не квалифицирована")
+            if not qualification_allows_letter(row, payload.purpose):
+                raise HTTPException(409, "Для этого письма недостаточно проверенных сведений о компании")
             if row['status'] != 'new':
                 raise HTTPException(409, 'Первичное письмо не создаётся для уже ведущейся или закрытой сделки')
             # This first iteration sends only a single initial message per company.
@@ -355,8 +379,14 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
                           and payload.contact_basis in {"explicit_request", "consent"}
                           and (row["fit_score"] or 0) >= int(os.getenv("CRM_MIN_FIT_SCORE", "70"))
                           and (row["intent_score"] or 0) >= int(os.getenv("CRM_MIN_INTENT_SCORE", "60")))
+            discovery_ready = (os.getenv("CRM_AUTO_APPROVE") == "1"
+                and os.getenv("CRM_DISCOVERY_OUTREACH_ENABLED") == "1"
+                and payload.purpose == "discovery" and payload.contact_basis == "owner_review"
+                and qualification_allows_letter(row, 'discovery') and (row["fit_score"] or 0) >= 50)
+            auto_ready = auto_ready or discovery_ready
             state = "ready" if auto_ready else "draft"
             db.execute(sql("INSERT INTO outreach(id,idempotency_key,payload_hash,lead_id,recipient,subject,body,contact_basis,basis_evidence,state,created_at,updated_at,message_id,approved_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)"), (key,payload.idempotency_key,fingerprint,row["id"],row["email"],payload.subject,payload.body,payload.contact_basis,payload.basis_evidence,state,stamp,stamp,message_id,stamp if auto_ready else None))
+            db.execute(sql("UPDATE outreach SET purpose=? WHERE id=?"), (payload.purpose,key))
             event(db, row["id"], "draft_created")
             if auto_ready:
                 event(db,row["id"],"campaign_policy_approved")
@@ -373,7 +403,7 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
             parent = lead(db, row["lead_id"])
             if payload.action == "approve" and (parent["archived_at"] or is_suppressed(db, parent["company_domain"], row["recipient"])):
                 raise HTTPException(409, "Контакт исключён")
-            if payload.action == 'approve' and (parent['status'] != 'new' or parent['qualification_status'] != 'qualified'
+            if payload.action == 'approve' and (parent['status'] != 'new' or not qualification_allows_letter(parent, row['purpose'])
                     or not parent['email'] or parent['email'].lower() != row['recipient'].lower() or not parent['contact_source_url']):
                 raise HTTPException(409, 'Нужна актуальная квалификация и подтверждённый контакт письма')
             state = "ready" if payload.action == "approve" else "cancelled"
@@ -392,17 +422,25 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
         with transaction() as db:
             expire_claims(db)
             limit = max(1, min(100, int(os.getenv("CRM_DAILY_SEND_LIMIT", "10"))))
-            today = datetime.now(timezone.utc).date().isoformat()
-            count = db.execute(sql("SELECT COUNT(*) AS n FROM outreach WHERE claimed_at>=? AND state IN ('inflight','accepted','uncertain')"), (today,)).fetchone()["n"]
+            moment = datetime.now(timezone.utc)
+            local = moment.astimezone(ZoneInfo(os.getenv('CRM_OUTREACH_TIMEZONE', 'Asia/Yekaterinburg')))
+            if not int(os.getenv('CRM_SEND_START_HOUR', '0')) <= local.hour < int(os.getenv('CRM_SEND_END_HOUR', '24')):
+                return {"message": None, "reason": "outside_window"}
+            today = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat()
+            count = db.execute(sql("SELECT COUNT(*) AS n FROM outreach WHERE claimed_at>=?"), (today,)).fetchone()["n"]
             if count >= limit:
                 return {"message": None, "reason": "daily_limit"}
+            spacing = max(0, min(3600, int(os.getenv('CRM_SEND_INTERVAL_SECONDS', '0'))))
+            latest = db.execute("SELECT MAX(claimed_at) AS stamp FROM outreach").fetchone()['stamp']
+            if latest and moment < datetime.fromisoformat(latest) + timedelta(seconds=spacing):
+                return {"message": None, "reason": "paced"}
             rows = db.execute("SELECT o.* FROM outreach o JOIN leads l ON l.id=o.lead_id WHERE o.state='ready' AND l.archived_at IS NULL ORDER BY o.created_at").fetchall()
             for item in rows:
                 parent = lead(db, item["lead_id"])
                 if is_suppressed(db, parent["company_domain"], item["recipient"]):
                     db.execute(sql("UPDATE outreach SET state='cancelled',updated_at=? WHERE id=?"), (now(), item["id"]))
                     continue
-                if (parent['status'] != 'new' or parent['qualification_status'] != 'qualified' or not parent['email']
+                if (parent['status'] != 'new' or not qualification_allows_letter(parent, item['purpose']) or not parent['email']
                         or parent['email'].lower() != item['recipient'].lower() or not parent['contact_source_url']):
                     db.execute(sql("UPDATE outreach SET state='draft',approved_at=NULL,updated_at=? WHERE id=?"),(now(),item['id']))
                     continue

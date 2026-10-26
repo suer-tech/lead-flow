@@ -439,7 +439,7 @@ async function bootstrap() {
 
 bootstrap();
 const DELIVERY_LABELS = {draft:"Черновик", ready:"Готово к отправке", inflight:"Отправка — ждём подтверждение", accepted:"Принято почтовым сервером", uncertain:"Результат неизвестен — нужна сверка", rejected:"Почтовый сервер отклонил", failed_before_send:"Ошибка до отправки", cancelled:"Отменено"};
-const QUALIFICATION_LABELS = {unknown:"Потребность не подтверждена",researching:"Исследование",qualified:"Есть подтверждённые сигналы",not_fit:"Не подходит",needs_review:"Нужна проверка"};
+const QUALIFICATION_LABELS = {unknown:"Потребность не подтверждена",researching:"Исследование",qualified:"Есть подтверждённые сигналы",contact_ready:"Подходит для уточнения потребности",not_fit:"Не подходит",needs_review:"Нужна проверка"};
 const SEGMENT_LABELS = {bankruptcy_legal:"Юридические услуги по банкротству",crm_integrator:"Внедрение и настройка CRM"};
 const SIGNAL_LABELS = {explicit_request:"Прямой запрос",procurement:"Закупка",manual_work:"Ручная работа",hiring:"Поиск сотрудников",complaint:"Жалоба пользователя",company_profile:"Сведения о компании",counterevidence:"Свидетельство против гипотезы"};
 const LIMITATION_LABELS = {

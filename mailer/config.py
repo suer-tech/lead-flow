@@ -71,12 +71,15 @@ class DispatcherConfig:
     crm_url: str = ""
     crm_token_env: str = "LEAD_CRM_AGENT_TOKEN"
     crm_token_file: str = ""
+    crm_transport: str = "direct"
     state_path: str = "data/mail-dispatch.sqlite3"
     max_sends_per_run: int = 3
     max_seconds: int = 120
     http_timeout: int = 15
 
     def validate(self):
+        from worker.crm_transport import validate_config
+        validate_config({"crm_transport": self.crm_transport, "crm_url": self.crm_url})
         url = urlsplit(self.crm_url)
         if (url.scheme != "https" or not url.hostname or url.username or url.password
                 or url.query or url.fragment or url.path not in ("", "/")):
@@ -113,7 +116,7 @@ def load_config(path: str | None = None) -> DispatcherConfig:
         values = json.loads(source.read_text(encoding="utf-8-sig"))
     allowed = {"enabled", "send_enabled", "sender", "password_file", "inbox_state_path",
                "state_path", "crm_url", "crm_token_env", "crm_token_file", "max_sends_per_run",
-               "max_seconds", "http_timeout", "mail_timeout", "batch_size"}
+               "max_seconds", "http_timeout", "mail_timeout", "batch_size", "crm_transport"}
     if not isinstance(values, dict) or set(values) - allowed:
         raise ValueError("mailer_config_unknown_fields")
     for name, key in {"LEAD_MAIL_SENDER": "sender", "LEAD_MAIL_PASSWORD_FILE": "password_file",
@@ -132,5 +135,5 @@ def load_config(path: str | None = None) -> DispatcherConfig:
         enabled=values.get("enabled", False), send_enabled=values.get("send_enabled", False),
         timeout=values.get("mail_timeout", 30), batch_size=values.get("batch_size", 50))
     return DispatcherConfig(mail=mail, **{key: values[key] for key in (
-        "crm_url", "crm_token_env", "crm_token_file", "state_path", "max_sends_per_run",
+        "crm_url", "crm_token_env", "crm_token_file", "crm_transport", "state_path", "max_sends_per_run",
         "max_seconds", "http_timeout") if key in values})

@@ -220,6 +220,15 @@ class MailerRunnerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_config(str(bad))
 
+    def test_private_crm_transport_never_reads_bearer_in_mail_worker(self):
+        config=replace(self.config,crm_url='https://lead-flow-ten-virid.vercel.app',crm_transport='iva_vpn')
+        with patch.object(DispatcherConfig,'token',side_effect=AssertionError('secret must stay in helper')), \
+                patch('worker.crm_transport.SocketCrmTransport') as bridge:
+            bridge.return_value.post.return_value={'message':None,'reason':'empty'}
+            client=MailCrmClient(config)
+            self.assertEqual('empty',client.claim()['reason'])
+            bridge.return_value.post.assert_called_once_with('/api/agent/outreach/claim',{})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ import sys
 from zoneinfo import ZoneInfo
 
 from worker.engine import load_config
+from worker.schedule import cycle_slot
 
 
 def due(config, now, rows):
@@ -19,9 +20,10 @@ def due(config, now, rows):
     pending = [r for r in rows if r['state'] in ('running', 'failed', 'waiting_resources', 'pending_publish')]
     if pending:
         return True, 'resume_checkpoint'
-    if any(r['slot'] == now.date().isoformat() for r in rows):
-        return False, 'daily_cycle_already_completed'
-    return True, 'new_daily_cycle'
+    interval = config.get('research_interval_minutes', 0)
+    if any(r['slot'] == cycle_slot(config, now) for r in rows):
+        return False, 'interval_already_completed' if interval else 'daily_cycle_already_completed'
+    return True, 'new_interval_cycle' if interval else 'new_daily_cycle'
 
 
 def main():
@@ -33,13 +35,14 @@ def main():
         with sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as db:
             db.row_factory = sqlite3.Row
             rows = [dict(r) for r in db.execute('SELECT state,slot FROM runs WHERE campaign=?', (config['campaign'],))]
-    allowed, reason = due(config, datetime.now(ZoneInfo(config['timezone'])), rows)
-    if allowed and reason == 'new_daily_cycle' and shutil.disk_usage(path.parent).free < 1024**3:
+    moment = datetime.now(ZoneInfo(config['timezone']))
+    allowed, reason = due(config, moment, rows)
+    if allowed and reason in ('new_daily_cycle', 'new_interval_cycle') and shutil.disk_usage(path.parent).free < 1024**3:
         allowed, reason = False, 'low_disk_new_cycle_deferred'
     if not allowed:
         print(json.dumps({'state': reason, 'models_called': 0, 'email_sending': False}))
         return 0
-    os.execv(sys.executable, [sys.executable, '-m', 'worker', '--config', config_path, 'run', '--scheduled'])
+    os.execv(sys.executable, [sys.executable, '-m', 'worker', '--config', config_path, 'run', '--scheduled', '--slot', cycle_slot(config, moment)])
 
 
 if __name__ == '__main__':

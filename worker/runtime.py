@@ -98,7 +98,7 @@ class IvaRuntime:
             "с конкретным процессом судебных документов или такой процесс у клиентов интегратора; тогда спрос пока неизвестен. Ничего не отправляй. "
             "Результат поиска — только кандидаты для дальнейшего чтения, не подтвержденные лиды. "
             "Найди НОВЫЕ компании: следующие домены уже обработаны в этом поисковом направлении недавно, "
-            "не возвращай их и их поддомены: " + json.dumps(list(excluded_domains)[:100], ensure_ascii=False), DISCOVERY)
+            "не возвращай их и их поддомены: " + json.dumps(list(excluded_domains)[:200], ensure_ascii=False), DISCOVERY)
         self.last_usage = self.search_model.last_usage
         return result
 
