@@ -52,7 +52,7 @@ def load_config(path):
 def fingerprint(config):
     keys = ("campaign", "queries", "max_candidates", "max_pages", "max_model_calls", "max_signal_age_days")
     value = {key: config[key] for key in keys}
-    value["pipeline_contract"] = 6
+    value["pipeline_contract"] = 7
     value["discovery_outreach"] = config.get("discovery_outreach", False)
     value["research_interval_minutes"] = config.get("research_interval_minutes", 0)
     value["company_recheck_days"] = config.get("company_recheck_days", 30)

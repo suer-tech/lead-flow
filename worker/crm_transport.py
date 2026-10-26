@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 
 ORIGIN = "https://lead-flow-ten-virid.vercel.app"
 SOCKET = Path("/run/lead-flow-crm.sock")
-PATHS = frozenset(("/api/agent/leads", "/api/agent/drafts", "/api/agent/outreach/claim",
+PATHS = frozenset(("/api/agent/leads", "/api/agent/drafts", "/api/agent/drafts/revise", "/api/agent/outreach/claim",
     "/api/agent/replies", "/api/agent/heartbeat", "/api/agent/maintenance"))
 MAX_BYTES = 128 * 1024
 CONNECT_SECONDS = 3

@@ -41,7 +41,7 @@ class AcquisitionTests(unittest.TestCase):
 
     def setUp(self):
         with closing(self.module.connect()) as db, db:
-            for table in ("lead_inbox", "outreach", "acquisition_keys", "lead_evidence", "lead_events", "leads", "lead_suppressions", "acquisition_runs"):
+            for table in ("outreach_text_revisions", "lead_inbox", "outreach", "acquisition_keys", "lead_evidence", "lead_events", "leads", "lead_suppressions", "acquisition_runs"):
                 db.execute("DELETE FROM " + table)
         self.client.cookies.clear()
 
@@ -99,6 +99,34 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(200,self.client.post(f"/api/agent/outreach/{message['id']}/result",headers=self.agent,json=result).status_code)
         with patch.dict(os.environ,{'CRM_DAILY_SEND_LIMIT':'1','CRM_SEND_INTERVAL_SECONDS':'0'}):
             self.assertEqual('daily_limit',self.client.post('/api/agent/outreach/claim',headers=self.agent).json()['reason'])
+
+    def test_revision_preserves_identity_and_cannot_touch_a_claimed_letter(self):
+        from acquisition import digest
+        from worker.contracts import LETTER_REVIEW_FLAGS
+        lead=self.ingest();draft=self.draft(lead['lead_id']);self.ready(draft['id'])
+        with closing(self.module.connect()) as db:
+            original=dict(db.execute('SELECT * FROM outreach WHERE id=?',(draft['id'],)).fetchone())
+        payload={'idempotency_key':'copy-revision-test','outreach_id':draft['id'],
+            'expected_content_hash':digest({'subject':original['subject'],'body':original['body']}),
+            'subject':'ИИ для судебных документов','body':'Предлагаю внедрение ИИ. Показатели проверим на ваших документах.',
+            'review_checks':{name:True for name in ('approved',*LETTER_REVIEW_FLAGS)}}
+        result=self.client.post('/api/agent/drafts/revise',headers=self.agent,json=payload)
+        self.assertEqual(200,result.status_code,result.text)
+        with closing(self.module.connect()) as db:
+            changed=dict(db.execute('SELECT * FROM outreach WHERE id=?',(draft['id'],)).fetchone())
+        for key in ('id','recipient','message_id','state','idempotency_key','payload_hash'):
+            self.assertEqual(original[key],changed[key])
+        self.assertTrue(self.client.post('/api/agent/drafts/revise',headers=self.agent,json=payload).json()['replayed'])
+        stale={**payload,'idempotency_key':'copy-revision-stale'}
+        self.assertEqual(409,self.client.post('/api/agent/drafts/revise',headers=self.agent,json=stale).status_code)
+        unreviewed={**stale,'review_checks':{**payload['review_checks'],'approved':False}}
+        self.assertEqual(422,self.client.post('/api/agent/drafts/revise',headers=self.agent,json=unreviewed).status_code)
+        message=self.claim()
+        claimed={**stale,'expected_content_hash':digest({'subject':changed['subject'],'body':changed['body']})}
+        self.assertEqual(409,self.client.post('/api/agent/drafts/revise',headers=self.agent,json=claimed).status_code)
+        self.accepted(message)
+        self.assertEqual(409,self.client.post('/api/agent/drafts/revise',headers=self.agent,json=claimed).status_code)
+        self.assertTrue(self.client.post('/api/agent/drafts/revise',headers=self.agent,json=payload).json()['replayed'])
 
     def test_fresh_database_is_empty_and_agent_auth_is_separate(self):
         self.module.init_database()
