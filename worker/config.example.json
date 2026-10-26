@@ -7,6 +7,7 @@
   "iva_root": "/opt/iva",
   "crm_url": "https://lead-flow-ten-virid.vercel.app",
   "crm_token_env": "LEAD_CRM_AGENT_TOKEN",
+  "crm_transport": "direct",
   "sender": "ai.studio.ufa@mail.ru",
   "max_candidates": 6,
   "max_pages": 24,

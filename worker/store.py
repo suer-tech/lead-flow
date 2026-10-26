@@ -43,13 +43,18 @@ class Store:
         # Additive migration: saved lead/CRM acknowledgements remain intact.
         columns = {row["name"] for row in self.db.execute("PRAGMA table_info(candidates)")}
         for name, definition in (("letter", "TEXT"), ("letter_review", "TEXT"), ("letter_attempts", "INTEGER NOT NULL DEFAULT 0"),
-                ("followup", "TEXT"), ("followup_attempts", "INTEGER NOT NULL DEFAULT 0")):
+                ("followup", "TEXT"), ("followup_attempts", "INTEGER NOT NULL DEFAULT 0"),
+                ("citation_repair", "TEXT"), ("citation_attempts", "INTEGER NOT NULL DEFAULT 0")):
             if name not in columns:
                 self.db.execute("ALTER TABLE candidates ADD COLUMN " + name + " " + definition)
         run_columns = {row["name"] for row in self.db.execute("PRAGMA table_info(runs)")}
         for name, definition in (("excluded_domains", "TEXT NOT NULL DEFAULT '[]'"), ("research_state", "TEXT"), ("research_error", "TEXT")):
             if name not in run_columns:
                 self.db.execute("ALTER TABLE runs ADD COLUMN " + name + " " + definition)
+        query_columns = {row["name"] for row in self.db.execute("PRAGMA table_info(queries)")}
+        for name, definition in (("candidate_quota", "INTEGER"), ("search_exclusions", "TEXT")):
+            if name not in query_columns:
+                self.db.execute("ALTER TABLE queries ADD COLUMN " + name + " " + definition)
         self.db.commit()
 
     def close(self):
@@ -66,6 +71,8 @@ class Store:
         existing = pending or self.rows("SELECT * FROM runs WHERE campaign=? AND slot=?", (config["campaign"], slot))
         if existing:
             if existing[0]["config_hash"] != fingerprint:
+                if existing[0]["state"] in ("completed", "completed_with_gaps"):
+                    return {**existing[0], "saved_result_only": True}
                 raise ValueError("config_changed_during_saved_run")
             return existing[0]
         ident = uuid.uuid4().hex
@@ -107,7 +114,7 @@ class Store:
                 raise RuntimeError("model_budget_exhausted")
 
     def update_candidate(self, ident, host, **fields):
-        allowed = {"stage", "data", "assessment", "review", "validation", "result", "lead_ack", "draft_ack", "error", "letter", "letter_review", "letter_attempts", "followup", "followup_attempts"}
+        allowed = {"stage", "data", "assessment", "review", "validation", "result", "lead_ack", "draft_ack", "error", "letter", "letter_review", "letter_attempts", "followup", "followup_attempts", "citation_repair", "citation_attempts"}
         if set(fields) - allowed:
             raise ValueError("unknown_candidate_field")
         values = [dumps(v) if isinstance(v, (dict, list)) else v for v in fields.values()]

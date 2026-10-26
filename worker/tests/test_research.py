@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch, Mock
 from urllib.error import HTTPError
 
-from worker.contracts import exact_quote, public_url, validate_assessment, LETTER_REVIEW_FLAGS
+from worker.contracts import exact_quote, public_url, validate_assessment, LETTER, LETTER_REVIEW_FLAGS
 from worker.engine import Engine
 from worker.runtime import NoRedirect
 from worker.store import Store
@@ -51,6 +51,8 @@ class FakeRuntime:
         self.extra_sources = {}
         self.followup_fail = False
         self.after_followup_assessment = None
+        self.quote_patch = {}
+        self.fail_quote_repair = False
 
     @contextmanager
     def lease(self, run_id):
@@ -61,7 +63,7 @@ class FakeRuntime:
         finally:
             self.released += 1
 
-    def search(self, query, excluded_domains=()):
+    def search(self, query, excluded_domains=(), limit=4):
         self.calls.append("search")
         self.search_exclusions.append(list(excluded_domains))
         return {"companies": self.companies}
@@ -88,6 +90,12 @@ class FakeRuntime:
             self.assessment = deepcopy(self.after_followup_assessment)
         return {"source_urls": list(self.followup_urls)}
 
+    def repair_quotes(self, candidate, assessment, sources, targets):
+        self.calls.append("repair_quotes")
+        if self.fail_quote_repair:
+            raise RuntimeError("private citation request")
+        return {key: assessment.get(key, "") for key in ("identity_quote", "signal_quote", "contact_quote")} | self.quote_patch
+
     def critique(self, candidate, assessment, sources):
         self.calls.append("critique")
         return deepcopy(self.review)
@@ -98,9 +106,9 @@ class FakeRuntime:
         return {"subject": "Вопрос об обработке судебных определений",
             "observation": "Увидел на вашем сайте описание задачи: " + assessment["use_case"] + ".",
             "question": "Актуальна ли сейчас задача извлечения данных из судебных определений?",
-            "pilot_focus": "извлечение сумм и реквизитов с проверкой результата специалистом",
-            "offer_kind": "partner_integration" if candidate["segment"] == "crm_integrator" else "direct_pilot",
-            "source_url": assessment["signal_url"], "source_quote": assessment["signal_quote"], **self.proposal_patch}
+            "pilot_focus": ("Предлагаю совместный пилот для одного клиента: проверить извлечение сумм и реквизитов на его образцах."
+                if candidate["segment"] == "crm_integrator" else "Предлагаю проверить извлечение сумм и реквизитов на небольшой выборке ваших документов."),
+            "offer_kind": "partner_integration" if candidate["segment"] == "crm_integrator" else "direct_pilot", **self.proposal_patch}
 
     def review_letter(self, candidate, assessment, sources, proposal):
         self.calls.append("review_letter")
@@ -419,11 +427,44 @@ class ResearchTests(unittest.TestCase):
         self.assertIsNone(json.loads(row["result"])["draft"])
         self.assertIn("question_contains_external_address_or_markup", json.loads(row["letter_review"])["validation_errors"])
 
-    def test_writer_must_ground_observation_in_exact_source_quote(self):
-        self.runtime.proposal_patch = {"source_quote": "Компания уже согласовала бюджет миллион рублей"}
+    def test_writer_cannot_override_checked_provenance_even_if_adapter_adds_fields(self):
+        self.runtime.proposal_patch = {"source_url": "https://evil.example/invented",
+            "source_quote": ASSESSMENT["signal_quote"].swapcase()}
         self.engine.run()
+        self.assertEqual("preview", self.candidate()["stage"])
+        proposal = json.loads(self.candidate()["letter"])
+        self.assertEqual(ASSESSMENT["signal_url"], proposal["source_url"])
+        self.assertEqual(ASSESSMENT["signal_quote"], proposal["source_quote"])
+        self.assertEqual(1, self.runtime.calls.count("compose"))
+        self.assertEqual(1, self.runtime.calls.count("review_letter"))
+
+    def test_invalid_saved_assessment_provenance_cannot_pass_letter_validation(self):
+        self.runtime.fail_letter_review = True
+        self.assertFalse(self.engine.run()["ok"])
+        row = self.candidate()
+        invalid = {**json.loads(row["assessment"]), "signal_quote": "Компания уже согласовала бюджет миллион рублей"}
+        self.store.update_candidate(row["run_id"], row["domain"], assessment=invalid)
+        self.assertTrue(self.engine.run()["ok"])
         self.assertEqual("draft_rejected", self.candidate()["stage"])
-        self.assertNotIn("review_letter", self.runtime.calls)
+        self.assertEqual(1, self.runtime.calls.count("review_letter"))
+        self.assertIsNone(json.loads(self.candidate()["result"])["draft"])
+        self.assertIn("letter_source_unverified", json.loads(self.candidate()["letter_review"])["validation_errors"])
+
+    def test_valid_provenance_does_not_bypass_semantic_observation_review(self):
+        self.runtime.proposal_patch = {"observation": "Ваша компания уже выделила миллион рублей на покупку нашего OCR."}
+        verdict = {**{flag: True for flag in LETTER_REVIEW_FLAGS}, "approved": False,
+            "observation_grounded": False, "no_invented_claims": False,
+            "reason": "Verified quote does not support the budget claim", "revision_feedback": "Убрать выдуманный бюджет"}
+        self.runtime.letter_reviews = [verdict, verdict]
+        self.engine.run()
+        self.assertEqual(2, self.runtime.calls.count("review_letter"))
+        self.assertEqual("draft_rejected", self.candidate()["stage"])
+        self.assertIsNone(json.loads(self.candidate()["result"])["draft"])
+
+    def test_writer_schema_leaves_provenance_to_code(self):
+        self.assertNotIn("source_url", LETTER["properties"])
+        self.assertNotIn("source_quote", LETTER["properties"])
+        self.assertFalse(LETTER["additionalProperties"])
 
     def test_critic_requests_one_persisted_letter_revision(self):
         verdict = {**{flag: True for flag in LETTER_REVIEW_FLAGS}, "approved": False,
@@ -433,7 +474,9 @@ class ResearchTests(unittest.TestCase):
         row = self.candidate()
         self.assertEqual("preview", row["stage"])
         self.assertEqual(2, row["letter_attempts"])
-        self.assertEqual(verdict, self.runtime.letter_feedback[1])
+        self.assertEqual(verdict, self.runtime.letter_feedback[1]["review"])
+        self.assertIn("subject", self.runtime.letter_feedback[1]["previous_proposal"])
+        self.assertIn("body", self.runtime.letter_feedback[1]["previous_letter"])
         self.assertEqual(1, self.runtime.calls.count("critique"))
 
     def test_rejected_letter_never_publishes_even_with_qualified_company(self):
@@ -469,6 +512,8 @@ class ResearchTests(unittest.TestCase):
         payload = json.loads(self.candidate()["result"])
         self.assertIn("совместный пилот для одного клиента", payload["draft"]["body"])
         self.assertEqual("partner_integration", json.loads(self.candidate()["letter"])["offer_kind"])
+        self.assertEqual(1, payload["draft"]["body"].count("совместный пилот для одного клиента"))
+        self.assertNotIn("измерим на пилоте", payload["draft"]["body"])
 
     def test_next_cycle_skips_recent_company_and_passes_frozen_history_to_search(self):
         self.engine.run(slot="first"); result = self.engine.run(slot="next-day")
@@ -644,6 +689,174 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual("crm_review_needed", self.candidate()["stage"])
         self.assertEqual("crm_http_409", self.candidate()["error"])
         self.assertEqual("completed", self.store.run(ident)["state"])
+
+    def test_literal_quote_repair_preserves_claims_urls_and_contact(self):
+        identity = TEXTS[0] + " " + " ".join(["описание"] * 26)
+        original = "Компания переносит суммы судебных определений в СРМ и проверяет их вручную."
+        self.runtime.texts[0] = identity
+        self.runtime.texts[1] = original
+        self.runtime.assessment.update(identity_quote=identity, signal_quote=original.replace("СРМ", "CRM"))
+        before = deepcopy(self.runtime.assessment)
+        self.runtime.quote_patch = {"identity_quote": TEXTS[0], "signal_quote": original,
+            "company_name": "Changed company", "signal_url": "https://evil.example", "contact_email": "invented@evil.example",
+            "current_unmet_need": False, "contact_quote": "This valid field must not change"}
+        self.engine.run()
+        row = self.candidate(); repaired = json.loads(row["assessment"])
+        self.assertEqual(1, row["citation_attempts"])
+        self.assertEqual("complete", json.loads(row["citation_repair"])["state"])
+        self.assertEqual(1, self.runtime.calls.count("repair_quotes"))
+        self.assertNotIn("followup", self.runtime.calls)
+        for key, value in before.items():
+            if key not in ("identity_quote", "signal_quote"):
+                self.assertEqual(value, repaired[key], key)
+        self.assertEqual("qualified", json.loads(row["result"])["lead"]["qualification_status"])
+
+    def test_quote_repair_does_not_promote_unknown_need_and_still_runs_critic(self):
+        self.runtime.texts[0] = TEXTS[0] + " " + " ".join(["описание"] * 26)
+        self.runtime.assessment.update(identity_quote=self.runtime.texts[0], signal_kind="profile_process", current_unmet_need=False, remaining_manual_step="")
+        self.runtime.quote_patch = {"identity_quote": TEXTS[0]}
+        self.runtime.review.update(need_is_unmet=False, need_quote_supports_claim=False)
+        self.engine.run()
+        self.assertEqual(1, self.runtime.calls.count("critique"))
+        self.assertEqual("needs_review", json.loads(self.candidate()["result"])["lead"]["qualification_status"])
+
+    def test_quote_repair_model_receives_explicit_length_and_literal_failure_feedback(self):
+        from worker.runtime import IvaRuntime
+        runtime = IvaRuntime.__new__(IvaRuntime)
+        runtime.analysis_model = Mock()
+        runtime.analysis_model.structured.return_value = {"identity_quote": TEXTS[0], "signal_quote": "", "contact_quote": TEXTS[2]}
+        sources = [self.runtime.fetch(url) for url in COMPANY["source_urls"]]
+        original = TEXTS[0] + " " + " ".join(["описание"] * 26)
+        sources[0]["text"] = original
+        assessment = {**ASSESSMENT, "identity_quote": original, "signal_quote": "Слова, которых нет в источнике"}
+        runtime.repair_quotes(COMPANY, assessment, sources, ["identity_quote", "signal_quote"])
+        prompt = runtime.analysis_model.structured.call_args.args[0]
+        payload = json.loads(prompt.rsplit("\n", 1)[-1])
+        identity = payload["repair_feedback"]["identity_quote"]
+        self.assertGreater(identity["words"], 25)
+        self.assertEqual(25, identity["maximum_words"])
+        self.assertTrue(identity["literal_in_declared_source"])
+        self.assertIn("too_many_words_shorten_literal_excerpt", identity["failures"])
+        self.assertIn("not_literal_copy_original_characters", payload["repair_feedback"]["signal_quote"]["failures"])
+
+    def test_quote_repair_failure_is_not_replayed_and_keeps_explicit_gap(self):
+        self.runtime.assessment["signal_quote"] = "Неправильно переписанная цитата об обработке документов"
+        self.runtime.fail_quote_repair = True
+        self.assertFalse(self.engine.run()["ok"])
+        self.assertEqual("citation_repair", self.candidate()["stage"])
+        result = self.engine.run()
+        self.assertEqual(1, self.runtime.calls.count("assess"))
+        self.assertEqual(1, self.runtime.calls.count("repair_quotes"))
+        self.assertEqual("completed_with_gaps", result["runs"][0]["state"])
+        self.assertEqual("citation_repair_unavailable", result["runs"][0]["error"])
+        self.assertIsNone(self.candidate()["result"])
+
+    def test_contact_fragments_are_not_evidence_of_identity_or_need(self):
+        sources = [self.runtime.fetch(url) for url in COMPANY["source_urls"]]
+        sources[2].update(ok=False, text="", error_category="insufficient_content", contact_readable=True, contact_fragments=[TEXTS[2], TEXTS[0], TEXTS[1]])
+        checked = validate_assessment(COMPANY, ASSESSMENT, sources, TIME.date())
+        self.assertTrue(checked["contact_valid"])
+        self.assertTrue(checked["eligible"])
+        moved = {**ASSESSMENT, "identity_url": sources[2]["url"], "signal_url": sources[2]["url"]}
+        rejected = validate_assessment(COMPANY, moved, sources, TIME.date())
+        self.assertFalse(rejected["valid"])
+        self.assertIn("identity_quote_unverified", rejected["errors"])
+        self.assertIn("signal_quote_unverified", rejected["errors"])
+
+    def test_contact_fragments_still_require_official_source_domain(self):
+        sources = [self.runtime.fetch(url) for url in COMPANY["source_urls"]]
+        sources[2].update(url="https://directory.example/firm", text="", ok=False, contact_readable=True, contact_fragments=[TEXTS[2]])
+        checked = validate_assessment(COMPANY, {**ASSESSMENT, "contact_url": sources[2]["url"]}, sources, TIME.date())
+        self.assertFalse(checked["contact_valid"])
+        self.assertEqual("", checked["email"])
+
+    def test_contact_quote_cannot_join_unrelated_fragment_boundaries(self):
+        sources = [self.runtime.fetch(url) for url in COMPANY["source_urls"]]
+        sources[2].update(text="Первая часть контактов", contact_fragments=["Вопросы по партнерству", "office@pravo.example"])
+        for quote in ("Вопросы по партнерству office@pravo.example", "Первая часть контактов Вопросы по партнерству"):
+            result = validate_assessment(COMPANY, {**ASSESSMENT, "contact_quote": quote}, sources, TIME.date())
+            self.assertFalse(result["contact_valid"])
+            self.assertIn("contact_quote_unverified", result["errors"])
+
+    def test_runtime_opts_into_scoped_public_contact_extraction(self):
+        from worker.runtime import IvaRuntime
+        runtime = IvaRuntime.__new__(IvaRuntime)
+        runtime.fetcher = Mock(return_value={"ok": True})
+        runtime.fetch(COMPANY["source_urls"][0])
+        runtime.fetcher.assert_called_once_with(COMPANY["source_urls"][0], include_contact_fragments=True)
+
+    def test_terminal_old_configuration_returns_saved_result_without_replay(self):
+        first = self.engine.run()
+        ident = first["runs"][0]["id"]
+        before = deepcopy(self.store.rows("SELECT * FROM candidates"))
+        calls = list(self.runtime.calls)
+        self.config["max_model_calls"] += 1
+        self.config["mode"] = "ingest"
+        with self.store.db:
+            self.store.db.execute("UPDATE runs SET config_hash='previous-pipeline' WHERE id=?", (ident,))
+        result = self.engine.run()
+        self.assertTrue(result["saved_result_only"])
+        self.assertEqual(ident, result["runs"][0]["id"])
+        self.assertEqual(before, self.store.rows("SELECT * FROM candidates"))
+        self.assertEqual(calls, self.runtime.calls)
+        self.assertFalse(self.crm.leads)
+
+    def test_discovery_reserves_capacity_for_each_search_direction(self):
+        from worker.engine import fingerprint
+        self.config["queries"] = ["Отдельное направление поиска " + str(index) for index in range(4)]
+        self.config["max_candidates"] = 4
+        calls = []
+        def search(query, excluded, limit):
+            index = len(calls)
+            calls.append((query, list(excluded), limit))
+            return {"companies": [{"company_name": "Company " + str(index) + "-" + str(item),
+                "company_domain": f"direction{index}-firm{item}.example", "segment": "bankruptcy_legal",
+                "source_urls": [f"https://direction{index}-firm{item}.example/about"]} for item in range(4)]}
+        self.runtime.search = search
+        row = self.store.start(self.config, "quota", fingerprint(self.config))
+        self.engine.discover(row["id"])
+        domains = [item["domain"] for item in self.store.rows("SELECT domain FROM candidates ORDER BY domain")]
+        self.assertEqual([f"direction{i}-firm0.example" for i in range(4)], domains)
+        self.assertEqual([1, 1, 1, 1], [call[2] for call in calls])
+        self.assertEqual(4, self.store.run(row["id"])["model_calls"])
+        self.assertEqual([1] * 4, [q["candidate_quota"] for q in self.store.rows("SELECT * FROM queries ORDER BY position")])
+
+    def test_full_candidate_capacity_skips_remaining_search_models(self):
+        self.config["queries"] *= 4
+        self.config["max_candidates"] = 1
+        self.engine.run()
+        self.assertEqual(1, self.runtime.calls.count("search"))
+        self.assertEqual(3, len(self.store.rows("SELECT * FROM queries WHERE state='skipped'")))
+
+    def test_contact_redirect_uses_final_domain_and_keeps_network_evidence(self):
+        url = COMPANY["source_urls"][2]
+        final = "https://external-directory.example/contacts"
+        network = {"reason": "http_403", "direct_http_status": 403, "vpn_http_status": 200}
+        self.runtime.extra_sources[url] = {"ok": True, "url": url, "canonical_url": final, "text": TEXTS[2],
+            "fetched_at": TIME.isoformat(), "http_status": 200, "network": network}
+        from worker.engine import fingerprint
+        run = self.store.start(self.config, "redirect", fingerprint(self.config))
+        self.engine.fetch(run["id"], COMPANY)
+        sources = self.engine.sources(run["id"], COMPANY)
+        redirected = next(source for source in sources if source["requested_url"] == url)
+        self.assertEqual(final, redirected["url"])
+        self.assertEqual(final, redirected["canonical_url"])
+        self.assertEqual(network, redirected["network_route"])
+        checked = validate_assessment(COMPANY, {**ASSESSMENT, "contact_url": final}, sources, TIME.date())
+        self.assertFalse(checked["contact_valid"])
+        self.assertIn("contact_not_official", checked["errors"])
+
+    def test_followup_skips_previously_read_final_redirect_url(self):
+        self.followup_contact()
+        final = "https://pravo.example/final-about"
+        self.runtime.extra_sources[COMPANY["source_urls"][0]] = {"ok": True, "url": COMPANY["source_urls"][0],
+            "canonical_url": final, "text": TEXTS[0], "fetched_at": TIME.isoformat()}
+        self.runtime.assessment["identity_url"] = final
+        self.runtime.after_followup_assessment["identity_url"] = final
+        self.runtime.followup_urls = [final] + self.runtime.followup_urls
+        self.engine.run()
+        self.assertNotIn(final, self.runtime.calls)
+        self.assertNotIn(final, json.loads(self.candidate()["data"])["source_urls"])
 
 
 if __name__ == "__main__":
