@@ -173,7 +173,8 @@ def run(config, *, crm_factory=MailCrmClient, poller=poll_replies, sender=send_o
                     return finish("blocked", "invalid_claim_response")
                 message = claimed["message"]
                 if message is None:
-                    return finish("completed", "daily_limit" if claimed.get("reason") == "daily_limit" else "queue_empty")
+                    reason = claimed.get("reason")
+                    return finish("completed", reason if reason in {"daily_limit", "paced", "outside_window"} else "queue_empty")
                 # An invalid response cannot authorize a recipient or SMTP send.
                 if (not isinstance(message, dict) or not isinstance(message.get("id"), str)
                         or not 1 <= len(message["id"]) <= 100

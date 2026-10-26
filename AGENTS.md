@@ -1,3 +1,5 @@
+Mailbox activation26Oct supersedes earlier absent/disabled notes below. Owner supplied the app password privately; it is installed as iva:iva0600 at /etc/lead-flow/mail-app-password. Never print it or copy it into the repository. Actual SMTP authentication/NOOP and read-only IMAP passed; baseline skipped113old messages. Production CRM_OUTREACH_ENABLED=1, mail.json enabled/send_enabled=true, max_sends_per_run1; timer enabled every5minutes09–22Yekaterinburg. First two actual SMTP DATA250 transactions were CRM-acknowledged with distinct durable MessageIDs, more than300seconds apart. Uncertain attempts never retry; SMTP acceptance is not recipient delivery. Native lead_research.status now has a separate read-only mailer journal section; top-level email_sent=false is researcher-only. Mailer paced/outside_window reasons no longer masquerade as queue_empty.
+
 # Current acquisition policy
 
 Owner update, 26 October 2026: expand acquisition throughout the day. New campaign

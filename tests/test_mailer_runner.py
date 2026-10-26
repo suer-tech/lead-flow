@@ -90,6 +90,14 @@ class MailerRunnerTests(unittest.TestCase):
         self.assertFalse(Path(self.config.state_path).exists())
         self.assertFalse(self.crm.heartbeats)
 
+    def test_pacing_and_off_hours_are_not_reported_as_an_empty_queue(self):
+        for reason in ('paced','outside_window','daily_limit'):
+            with self.subTest(reason=reason), patch.object(self.crm,'claim',return_value={'message':None,'reason':reason}):
+                result=self.execute()
+                self.assertEqual(reason,result['reason'])
+                self.assertEqual(0,result['attempted'])
+        self.assertEqual([],self.sent)
+
     def test_missing_credentials_block_before_any_network(self):
         result = self.execute(config=replace(self.config, mail=replace(self.config.mail, password_file="")))
         self.assertEqual(result["reason"], "configuration_not_ready")
