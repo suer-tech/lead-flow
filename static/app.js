@@ -440,6 +440,35 @@ async function bootstrap() {
 bootstrap();
 const DELIVERY_LABELS = {draft:"Черновик", ready:"Готово к отправке", inflight:"Отправка — ждём подтверждение", accepted:"Принято почтовым сервером", uncertain:"Результат неизвестен — нужна сверка", rejected:"Почтовый сервер отклонил", failed_before_send:"Ошибка до отправки", cancelled:"Отменено"};
 const QUALIFICATION_LABELS = {unknown:"Потребность не подтверждена",researching:"Исследование",qualified:"Есть подтверждённые сигналы",not_fit:"Не подходит",needs_review:"Нужна проверка"};
+const SEGMENT_LABELS = {bankruptcy_legal:"Юридические услуги по банкротству",crm_integrator:"Внедрение и настройка CRM"};
+const SIGNAL_LABELS = {explicit_request:"Прямой запрос",procurement:"Закупка",manual_work:"Ручная работа",hiring:"Поиск сотрудников",complaint:"Жалоба пользователя",company_profile:"Сведения о компании",counterevidence:"Свидетельство против гипотезы"};
+const LIMITATION_LABELS = {
+  no_current_unmet_need:"Текущая нерешённая потребность не подтверждена",
+  remaining_workflow_gap_unknown:"Не установлено, какую часть работы ещё нужно автоматизировать",
+  signal_date_unverified:"Дата сигнала потребности не подтверждена",
+  signal_date_invalid:"Дата сигнала потребности указана некорректно",
+  signal_outside_freshness_window:"Дата сигнала потребности не соответствует периоду проверки актуальности",
+  identity_url_invalid:"Ссылка на сведения о компании указана некорректно",
+  identity_quote_unverified:"Цитата о компании не подтверждена источником",
+  identity_not_official:"Сведения о компании взяты не с её официального сайта",
+  signal_url_invalid:"Ссылка на сигнал потребности указана некорректно",
+  signal_quote_unverified:"Цитата о потребности не подтверждена источником",
+  contact_url_invalid:"Ссылка на источник контакта указана некорректно",
+  contact_quote_unverified:"Цитата с контактом не подтверждена источником",
+  contact_not_official:"Контакт взят не с официального сайта компании",
+  email_invalid:"Адрес электронной почты указан некорректно",
+  email_not_in_official_quote:"Адрес электронной почты не найден в цитате с официального сайта",
+  company_name_changed:"Название компании не совпало с исходным исследованием"
+};
+function displayLabel(labels, value) {
+  return Object.hasOwn(labels, value) ? labels[value] : value;
+}
+function displayLimitations(value) {
+  return value.split(";").map(part => {
+    const code = part.trim();
+    return Object.hasOwn(LIMITATION_LABELS, code) ? part.replace(code, LIMITATION_LABELS[code]) : part;
+  }).join(";");
+}
 function safeLink(value, label) {
   try { const url = new URL(value); if (!["https:", "http:"].includes(url.protocol)) return escapeHtml(label); return `<a target="_blank" rel="noopener noreferrer" href="${escapeHtml(url.href)}">${escapeHtml(label)}</a>`; }
   catch { return escapeHtml(label); }
@@ -453,14 +482,14 @@ async function loadResearch(id) {
     area.classList.remove("hidden");
     area.innerHTML = `<h3>Почему этой компании может быть нужен OCR</h3>
       <p><strong>${escapeHtml(QUALIFICATION_LABELS[lead.qualification_status] || lead.qualification_status)}</strong> · Соответствие ${lead.fit_score ?? "неизвестно"} / 100 · Сигнал спроса ${lead.intent_score ?? "неизвестно"} / 100</p>
-      <p>${escapeHtml(lead.segment || "Сегмент пока не определён")}</p>
+      <p>${escapeHtml(displayLabel(SEGMENT_LABELS, lead.segment) || "Сегмент пока не определён")}</p>
       <p>${escapeHtml(lead.need_summary || "Исследование потребности пока не добавлено")}</p>
       ${lead.use_case ? `<p>${escapeHtml(lead.use_case)}</p>` : ""}
-      ${lead.limitations ? `<p class="research-warning">Неизвестно / требует проверки: ${escapeHtml(lead.limitations)}</p>` : ""}
+      ${lead.limitations ? `<p class="research-warning">Неизвестно / требует проверки: ${escapeHtml(displayLimitations(lead.limitations))}</p>` : ""}
       ${lead.contact_source_url ? `<p>${safeLink(lead.contact_source_url, "Источник контакта")}</p>` : ""}
       ${lead.archived_at ? `<p class="research-warning">В архиве: ${escapeHtml(lead.archive_reason)} · ${escapeHtml(formatFullDate(lead.archived_at))}</p>` : ""}
       <h4>Свидетельства (${data.evidence.length})</h4>
-      ${data.evidence.map(e=>`<article class="evidence-item"><blockquote>${escapeHtml(e.quote)}</blockquote><p>${escapeHtml(e.interpretation)}</p><small>${safeLink(e.source_url,"Открыть источник")} · Проверено ${escapeHtml(formatFullDate(e.observed_at))} · ${escapeHtml(e.signal)}</small></article>`).join("") || '<p>Пока нет сохранённых источников. Отрасль сама по себе не подтверждает спрос.</p>'}
+      ${data.evidence.map(e=>`<article class="evidence-item"><blockquote>${escapeHtml(e.quote)}</blockquote><p>${escapeHtml(e.interpretation)}</p><small>${safeLink(e.source_url,"Открыть источник")} · Проверено ${escapeHtml(formatFullDate(e.observed_at))} · ${escapeHtml(displayLabel(SIGNAL_LABELS, e.signal))}</small></article>`).join("") || '<p>Пока нет сохранённых источников. Отрасль сама по себе не подтверждает спрос.</p>'}
       <h4>Письма (${data.outreach.length})</h4>
       ${data.outreach.map(m=>`<article class="evidence-item"><strong>${escapeHtml(m.subject)}</strong><p>${escapeHtml(DELIVERY_LABELS[m.state] || m.state)} · ${escapeHtml(m.recipient)}</p><pre>${escapeHtml(m.body)}</pre><small>Основание контакта: ${escapeHtml(m.basis_evidence)}</small>${m.state==="accepted"?'<p>Это подтверждение приёма сервером, не доставки или прочтения.</p>':""}${["draft","ready"].includes(m.state)&&!lead.archived_at?`<div class="draft-actions">${m.state==="draft"?`<button type="button" class="button primary" data-outreach="${escapeHtml(m.id)}" data-action="approve">Разрешить отправку</button>`:""}<button type="button" class="button ghost" data-outreach="${escapeHtml(m.id)}" data-action="cancel">Отменить письмо</button></div>`:""}</article>`).join("") || '<p>Писем пока нет.</p>'}
       <h4>Ответы (${data.replies.length})</h4>
@@ -477,7 +506,7 @@ async function loadAutomation() {
   try {
     const data=await api("/api/automation");
     area.innerHTML=`<h2>Состояние интеграции</h2><div class="dashboard-cards">${metricCard(data.agent_configured?"Настроен":"Не подключён","Доступ агента")}${metricCard(data.outreach_enabled&&data.sender_configured?"Разрешена":"Отключена","Отправка писем")}${metricCard(data.unmatched_replies,"Ответов на проверку")}${metricCard(data.archived_leads,"Лидов в архиве")}</div>
-      <p>${data.worker_seen?"Последние запуски сервера показаны ниже.":"Серверный агент ещё не присылал результаты работы."} Это состояние журнала, а не подтверждение включённого расписания.</p>
+      <p>${data.worker_seen?"Последние записи журнала агента показаны ниже.":"Журнал агента пока пуст. Найденные компании отображаются на канбане."} Статус расписания поиска можно уточнить у Ивы.</p>
       <p>Автоматическое разрешение отправки: ${data.auto_approve_enabled?"включено для контактов, прошедших правила кампании":"выключено"}. Архив без ответа: ${data.no_reply_archive_enabled?`через ${data.no_reply_days} дней`:"выключен"}.</p>
       <h3>Очередь писем</h3><div class="dashboard-cards">${Object.entries(data.outreach).map(([k,v])=>metricCard(v,DELIVERY_LABELS[k]||k)).join("") || '<p>Писем в очереди нет.</p>'}</div>
       <h3>Последние запуски</h3>${data.runs.map(r=>`<article class="evidence-item"><strong>${escapeHtml(r.state)}</strong> · ${escapeHtml(formatFullDate(r.updated_at))}<p>${escapeHtml(r.summary)}</p></article>`).join("")||'<p>Запуски пока не зарегистрированы.</p>'}`;

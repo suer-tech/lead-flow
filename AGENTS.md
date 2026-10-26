@@ -22,7 +22,7 @@ worker/ uses the existing Iva research lease/readers and separate checkpoints.
 Do not resume Iva's paused general demand-research job as a side effect. Server
 changes must follow E:/Projects/main_agent/AGENTS.md and its deployment docs.
 The worker/native Iva control are installed on the VPS. On 2026-10-26 config is
-enabled=true, mode=preview; the research timer is enabled/active. Admission returned
+enabled=true, mode=ingest, crm_transport=iva_vpn; the research timer is enabled/active. Admission returned
 daily_cycle_already_completed with zero model calls after activation. Today's
 slot is terminal; next new search is 2026-10-27 09:00 Yekaterinburg, no pending loop.
 First native preview read 5 of 7 attempted URLs and rejected 3 candidates. Second
@@ -42,17 +42,28 @@ calls (two author, one reviewer), all eight flags true. Provenance is pinned fro
 the checked assessment; author returns prose only. MYFORCE stays needs_review/
 intent0, source/assessment/critic unchanged; no CRM/SMTP or new research. Production
 v2 remains four rejected/zero drafts. The renderer subsequently lost a duplicate
-fixed criteria sentence without another model probe. Full local pytest passed
-136 tests/13 subtests; all 74 server tests passed after that cosmetic deployment
-in 0.864s.
+fixed criteria sentence without another model probe. Current full local pytest
+passed 149 tests/49 subtests; VPS87worker/transport/doctor tests passed in 1.211s,
+14 Linux helper tests,7 Linux commissioning tests,43 native status/control/audit tests.
 Do not interpret all rejected candidates as proven lack of customer need.
 Do not equate attempted URLs with readable evidence, or inactive oneshot with failure.
-CRM PR1 merged as f8eb62a, but CRM_AGENT_TOKEN access was approved; authenticated commissioning is still in progress;
-do not claim server export connected. Host DNS resolves Vercel but direct HTTPS
+CRM PR2 merged as e263639 after PR1 f8eb62a; Production deployment
+CRssM64M6ThGvaLNcofSArG3xLML Ready. Owner-approved authenticated commissioning
+passed 12 gates: first HTTP 200 created MYFORCE lead 279, second HTTP 200 returned
+created=false/replayed=true for 279. UI has 122 active cards (previously 121), exactly
+one MYFORCE needs_review/fit50/intent0,3 sources,0 letters. Zero models/draftAPI/SMTP;
+production research tables and isolated evidence unchanged. Host DNS resolves Vercel but direct HTTPS
 fails (one TCP timeout, another TCP connection followed by TLS timeout);
 existing iva-codex VPN public GET passes 200/verified TLS.
-Upstream cause and authenticated API remain unverified; a network bridge is
-local preparation, not installed/enabled. SMTP/IMAP remain disabled and unverified
+Upstream cause remains unproven; authenticated ingestion works via installed
+lead-flow-crm.socket enabled/active and fixed root-owned helper inside existing
+iva-codex namespace. Token is private /etc/lead-flow/crm-agent.token root:iva0640;
+never print/copy to public reader. Only fixed leads/drafts POST supported, no
+redirect/retry/global route change. Native status proof is verified/scoped_ingest,
+last_verified_at 2026-10-26T11:15:14.661207+00:00,current_api_health=not_checked;
+main research DB still0 ACK/0 drafts, last_confirmed_export null. Fixed root-owned
+commissioning proof does not rewrite isolated probes as production cycles.
+SMTP/IMAP and mailer route commissioning remain separate, disabled/unverified
 without mailbox credentials. PostgreSQL acceptance passed 27 gates on an isolated
 database. Backups/retention are in maintenance.py; 31 backup/restore gates passed
 on an isolated online copy. Completed raw bodies may compact after 14 days while

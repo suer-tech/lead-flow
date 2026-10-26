@@ -80,15 +80,20 @@ CRM/SMTP не вызывались. Рабочий второй цикл по-п
 и ноль готовых писем. Позднее удалён повтор фиксированной фразы renderer;
 отдельной модельной пробы этой косметической правки не было.
 
-CRM обновлена через [PR #1](https://github.com/suer-tech/lead-flow/pull/1),
-merge `f8eb62a`. Привязка серверного агента к её API ещё ожидает настройки
-`CRM_AGENT_TOKEN`; экспорт в продуктивную CRM не подтверждён. DNS на VPS работает,
-но оба A-адреса Vercel дают timeout из host; публичный GET через существующий VPN
-даёт 200 с проверенным TLS. Причина upstream и авторизованный API ещё не проверены;
-подготовка network bridge пока не означает работающего подключения CRM.
-Vercel deployment `Ready`; интерфейс показывает 121 существующую карточку,
-новый раздел исследования работает.
-Конфиг исследователя `enabled=true`, `mode=preview`; исследовательский таймер
+CRM обновлена через [PR #2](https://github.com/suer-tech/lead-flow/pull/2),
+merge `e263639`; Vercel production `CRssM64M6ThGvaLNcofSArG3xLML` — `Ready`.
+После подтверждения владельца CRM-токен подключён. Реальный ingest MYFORCE
+получил HTTP 200/created=true/ID 279, повтор — HTTP 200/created=false/replayed=true
+с тем же ID. Все 12 условий commissioning прошли без моделей/draft API/SMTP.
+Интерфейс показывает 122 активные карточки вместо 121, MYFORCE ровно одна,
+`needs_review`, fit 50/intent 0, три источника и ноль писем.
+Отдельный bridge использует существующий VPN; directHTTPS из host не заработал,
+причина upstream не доказана. Ключ остаётся в приватном файле helper; глобальные
+маршруты и public reader не менялись. Нативный статус Ивы показывает
+`verified/scoped_ingest` с датой проверки, но `current_api_health=not_checked`:
+сам status не выполняет HTTP. Основные исследовательские циклы сохранены с 0 ACK/0 drafts,
+изолированный commissioning не подменяет их историю.
+Конфиг исследователя `enabled=true`, `mode=ingest`, `crm_transport=iva_vpn`; исследовательский таймер
 включён. Проверка допуска вернула `daily_cycle_already_completed` без моделей:
 слот 26 октября завершён, следующий новый поиск — 27.10.2026 в 09:00 Екатеринбурга.
 Таймер обслуживания включён, следующий запуск 27.10.2026 в 03:30 Екатеринбурга.
@@ -104,6 +109,8 @@ backup выполнен 26.10 в 15:10:14 Екатеринбурга: одна �
 через `lead_research` у Ивы; наличие кода само по себе не включает таймер.
 Старое расписание общего исследования спроса Ивы не возобновляется.
 
-Полный локальный `python -m pytest -q`: 136 тестов и 13 subtests прошли.
-Worker/HTTP/probe: 74 локальные проверки; все 74 теста прошли и на VPS после
-последней правки renderer за 0,864 с. Синтаксис интерфейса: `node --check static/app.js`.
+Полный локальный `python -m pytest -q`: 149 тестов и 49 subtests прошли.
+На VPS: 87 worker/transport/doctor тестов за 1,211 с, 14 Linux helper,
+7 Linux commissioning и 43 native status/control/audit. Синтаксис интерфейса:
+`node --check static/app.js`. Почтовые credentials, маршруты mailer и доставка
+требуют отдельного подключения и приёмки.
