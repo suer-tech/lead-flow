@@ -313,3 +313,5 @@ h2 { font-size: 26px; }
 .research-warning { padding:12px; border-radius:8px; background:#fff3d9; }
 .draft-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
 #automationView { margin-bottom:30px; }
+.integration-status .dashboard-card { min-width:0; }
+.integration-status .dashboard-card strong { font-family:inherit; font-size:clamp(16px,1.5vw,20px); line-height:1.3; letter-spacing:normal; overflow-wrap:anywhere; }

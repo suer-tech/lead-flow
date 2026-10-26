@@ -505,11 +505,11 @@ async function loadAutomation() {
   const area=document.querySelector("#automationView");area.textContent="Загрузка состояния…";
   try {
     const data=await api("/api/automation");
-    area.innerHTML=`<h2>Состояние интеграции</h2><div class="dashboard-cards">${metricCard(data.agent_configured?"Настроен":"Не подключён","Доступ агента")}${metricCard(data.outreach_enabled&&data.sender_configured?"Разрешена":"Отключена","Отправка писем")}${metricCard(data.unmatched_replies,"Ответов на проверку")}${metricCard(data.archived_leads,"Лидов в архиве")}</div>
-      <p>${data.worker_seen?"Последние записи журнала агента показаны ниже.":"Журнал агента пока пуст. Найденные компании отображаются на канбане."} Статус расписания поиска можно уточнить у Ивы.</p>
+    area.innerHTML=`<h2>Состояние интеграции</h2><div class="dashboard-cards integration-status">${metricCard(data.agent_configured?"Настроен":"Не подключён","Доступ агента")}${metricCard(data.outreach_enabled&&data.sender_configured?"Разрешена":"Отключена","Отправка писем")}${metricCard(data.unmatched_replies,"Ответов на проверку")}${metricCard(data.archived_leads,"Лидов в архиве")}</div>
+      <p>${data.worker_seen?"Последние записи почтового работника показаны ниже.":"Почтовых проходов ещё не было. Найденные компании отображаются на канбане."} Статус расписания поиска можно уточнить у Ивы.</p>
       <p>Автоматическое разрешение отправки: ${data.auto_approve_enabled?"включено для контактов, прошедших правила кампании":"выключено"}. Архив без ответа: ${data.no_reply_archive_enabled?`через ${data.no_reply_days} дней`:"выключен"}.</p>
       <h3>Очередь писем</h3><div class="dashboard-cards">${Object.entries(data.outreach).map(([k,v])=>metricCard(v,DELIVERY_LABELS[k]||k)).join("") || '<p>Писем в очереди нет.</p>'}</div>
-      <h3>Последние запуски</h3>${data.runs.map(r=>`<article class="evidence-item"><strong>${escapeHtml(r.state)}</strong> · ${escapeHtml(formatFullDate(r.updated_at))}<p>${escapeHtml(r.summary)}</p></article>`).join("")||'<p>Запуски пока не зарегистрированы.</p>'}`;
+      <h3>Последние почтовые проходы</h3>${data.runs.map(r=>`<article class="evidence-item"><strong>${escapeHtml(r.state)}</strong> · ${escapeHtml(formatFullDate(r.updated_at))}<p>${escapeHtml(r.summary)}</p></article>`).join("")||'<p>Почтовые проходы пока не зарегистрированы.</p>'}`;
   }catch(error){area.textContent=`Не удалось загрузить состояние: ${error.message}`;}
 }
 document.querySelector("#showArchive").addEventListener("change",loadLeads);
