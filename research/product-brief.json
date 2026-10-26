@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "verified_at": "2026-10-26",
+  "market": "Russia, Russian-language business customers",
+  "sender": "ai.studio.ufa@mail.ru",
+  "mail_credentials_ready": false,
+  "commercial_goal": "Find a specific document workflow with a budget owner and win a paid, bounded pilot; measure repeatable demand before investing in a general OCR SaaS.",
+  "primary_offer": "Implementation for a client's document types and existing accounting/CRM workflow",
+  "secondary_offer": "API access for a customer or software partner who can integrate it themselves",
+  "verified_capabilities": [
+    "Russian court decisions: configured extraction of 27 fields including case, parties, procedure, deadlines and decision sections",
+    "Creditor claims and court rulings using rtk, rtk2 and rtk3 profiles",
+    "Russian passport main page and registration profiles",
+    "Asynchronous API, queue, status and structured results, callbacks",
+    "Court-specific rules with validation and model fallback; some documents require review",
+    "RTK3 evidence-linked claim components and Decimal arithmetic; exclusion of rejected or unrelated amounts and checks on pledge/party associations",
+    "Conditional court deadline handling and cross-field checks; configured client rules are not universal legal rules"
+  ],
+  "do_not_claim": [
+    "Better accuracy, speed or price than competitors without a comparative benchmark",
+    "Generic JSON extraction is equivalent to our configured semantic/legal workflow, or a competitor's per-page price buys the same verified result",
+    "All documents and arbitrary letters supported out of the box",
+    "100% accuracy or autonomous legal decisions",
+    "Fully local processing or no data sent to external model providers",
+    "A ready-made PAU, Bitrix24 or 1C connector without an integration test",
+    "A production SaaS SLA, multi-tenant security certification or commercial terms not yet established"
+  ],
+  "priority_segments": [
+    {"id": "bankruptcy_operations", "buyer": "Owner or operations head of a bankruptcy legal firm / financial-manager team", "job": "Transfer fields from incoming court documents into the existing case system", "required_validation": "Actual manual work, monthly volume, current tools, data restrictions, budget owner"},
+    {"id": "vertical_crm_partner", "buyer": "Owner or product head of a bankruptcy CRM / legal systems integrator", "job": "Embed a specialised extractor into an installed customer workflow", "required_validation": "Unsolved customer requests, partner access to customers, supported integration, economic incentive"},
+    {"id": "creditor_portfolio", "buyer": "Head of legal operations handling many creditor claims", "job": "Extract creditor, amounts, claim components and ruling outcome", "required_validation": "Suitable documents and volumes, incumbent process, procurement and security constraints"}
+  ],
+  "sales_unknowns": ["Product name and permitted case-study references", "Pilot price and delivery capacity", "Per-page processing cost and human-review cost", "Data processing agreement and storage/retention policy", "Specific client integrations"],
+  "local_evidence": [
+    "E:/Projects/OCR_document_reader/OCR-document-parser/src/ocr_platform/config/pipelines/system/router.yaml",
+    "E:/Projects/OCR_document_reader/OCR-document-parser/src/ocr_platform/config/pipelines/profiles/court_decision_ru.yaml",
+    "E:/Projects/OCR_document_reader/analysis/deploy-2026-10-25/receipt.json"
+  ]
+}

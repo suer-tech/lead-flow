@@ -24,6 +24,7 @@
           <nav class="view-switcher" aria-label="Разделы CRM">
             <button class="view-button active" type="button" data-view="board">Канбан</button>
             <button class="view-button" type="button" data-view="dashboard">Дашборд</button>
+            <button class="view-button" type="button" data-view="automation">Исследование и письма</button>
           </nav>
           <label class="search-wrap" aria-label="Поиск лидов">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
@@ -46,6 +47,7 @@
 
         <div class="notice hidden" id="notice" role="status"></div>
         <section id="boardView">
+          <label class="archive-toggle"><input id="showArchive" type="checkbox" /> Показывать архив вместо активных лидов</label>
           <section class="board" id="board" aria-label="Канбан лидов"></section>
         </section>
 
@@ -87,6 +89,7 @@
             <div class="activity-list" id="activityList"></div>
           </section>
         </section>
+        <section id="automationView" class="analytics-panel hidden" aria-label="Работа агента"></section>
       </main>
     </div>
 
@@ -117,8 +120,9 @@
           <label class="field">Дата следующего действия<input name="next_action_at" type="datetime-local" /></label>
           <label class="field">Бюджет, ₽<input name="budget" type="number" min="0" step="1000" placeholder="200000" /></label>
         </div>
+        <section id="researchDetail" class="research-detail hidden" aria-label="Исследование потребности и переписка"></section>
         <div class="dialog-footer">
-          <button class="button danger hidden" type="button" id="deleteLeadButton">Удалить</button>
+          <button class="button danger hidden" type="button" id="deleteLeadButton">В архив</button>
           <a class="source-link hidden" id="sourceLink" href="#" target="_blank" rel="noreferrer">↗ Открыть источник</a>
           <div class="footer-spacer"></div>
           <button class="button ghost" type="button" id="cancelDialog">Отмена</button>

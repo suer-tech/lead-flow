@@ -302,3 +302,14 @@ h2 { font-size: 26px; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .search-wrap { width: min(260px, 24vw); }
 }
+.archive-toggle { display:flex; gap:10px; align-items:center; margin:0 0 20px; font-size:13px; color:#626858; }
+.research-detail { border-top:1px solid #dfe3d7; margin:24px 0; padding-top:16px; max-width:100%; }
+.research-detail h3, .research-detail h4 { margin:20px 0 10px; }
+.research-detail p { line-height:1.6; overflow-wrap:anywhere; }
+.evidence-item { padding:16px; margin:12px 0; border:1px solid #dfe3d7; border-radius:12px; background:#f9faf7; overflow-wrap:anywhere; }
+.evidence-item blockquote { margin:0 0 12px; padding-left:12px; border-left:3px solid #83945c; white-space:pre-wrap; }
+.evidence-item pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; line-height:1.6; }
+.evidence-item small, .qualification { color:#66705e; }
+.research-warning { padding:12px; border-radius:8px; background:#fff3d9; }
+.draft-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+#automationView { margin-bottom:30px; }

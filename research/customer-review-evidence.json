@@ -1,0 +1,55 @@
+{
+  "as_of": "2026-10-26",
+  "purpose": "Investigate actual customer experience before accepting competitor feature claims",
+  "source_limitations": "Public accounts are testimony, not reproduced technical failures. Versions and verified fixes mostly unknown. No systematic current-version OCR benchmark established.",
+  "sources": [
+    {
+      "url": "https://yandex.com/maps/org/russkiye_informatsionnyye_tekhnologii/1192816068/reviews/",
+      "access": "Full public page read in browser; 27 reviews shown",
+      "evidence": [
+        {"author": "Юлия Ку", "date": "2025-09-20", "summary": "Seven seats; reports sync, migration and login failures."},
+        {"author": "Игорь Киржаев", "date": "2025-07-08", "summary": "Reports licence access ended; seeks alternative.", "dedup_group": "kirzhayev-license-july2025"},
+        {"author": "Михаил И.", "date": "2025-06-19", "summary": "Reports bugs and unsatisfactory paid support."},
+        {"author": "Антон С.", "date": "2023-06-19", "summary": "Reports RTK problem; advised to re-enter registry, estimated one workday."},
+        {"author": "Ирина Тимофеева", "date": "2024-03-29", "summary": "Praises responsive professional support.", "polarity": "positive"}
+      ],
+      "vendor_response": "2025-07-09 response to Михаил requests incident details; resolution not demonstrated.",
+      "caveat": "Overall company rating includes office/employment reviews. Exclude those from product assessment."
+    },
+    {
+      "url": "https://www.bankrot.org/threads/soft-pomoschnik-arbitrazhnogo-upravljajuschego.6475/post-295101",
+      "author": "ЯВВ",
+      "date": "2024-02-02",
+      "access": "Full page read in browser",
+      "summary": "Пользователь ПАУ сообщает о неполном переносе внесённых паспортных полей в протокол и повторных неудачах подключения к Bankrotech при регистрации процедуры.",
+      "caveat": "Последующая дискуссия касается требований к протоколу. Подтверждения исправления и версии программы нет. Это не измерение OCR."
+    },
+    {
+      "url": "https://www.bankrot.org/threads/soft-pomoschnik-arbitrazhnogo-upravljajuschego.6475/page-5",
+      "author": "Kapues",
+      "date": "2023-02-10",
+      "post": 95,
+      "summary": "Описывает устаревающие шаблоны, проблемы нескольких устройств и вылеты; продолжает пользоваться оплаченной программой.",
+      "caveat": "Исторический опыт, версия и исправление не установлены. Другие сообщения этой темы могут относиться к Рафинаду."
+    },
+    {
+      "url": "https://www.bankrot.org/threads/ehffektivna-li-programma-pomoschnik-au.2641/page-4",
+      "author": "IgorKirzh",
+      "date": "2025-07-08",
+      "post": 67,
+      "dedup_group": "kirzhayev-license-july2025",
+      "summary": "Повтор истории прекращения регистрации, встречающейся на Яндекс Картах и 2GIS; один эпизод."
+    },
+    {
+      "url": "https://2gis.ru/izhevsk/firm/5770765303546783/tab/reviews",
+      "summary": "В выборке есть отзывы о платных переносах и поддержке; история Игоря Киржаева повторяется.",
+      "caveat": "Часть дат доступна только у ответов компании; не выдавать их за дату отзыва."
+    }
+  ],
+  "commercial_interpretation": [
+    "User dissatisfaction supports investigating repeated data entry, fragile integrations and costly correction work even when the incumbent advertises automation.",
+    "Licence cost, access management and full statutory reporting are distinct problems. Current OCR alone is not a replacement for the entire PAU workflow.",
+    "Ask about the last failed document operation and cost of correction; verify whether it persists in the client's installed version.",
+    "A dissatisfied reviewer is not automatically a current purchasing lead or an authorised outreach recipient."
+  ]
+}

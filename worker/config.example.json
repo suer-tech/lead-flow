@@ -1,0 +1,23 @@
+{
+  "enabled": false,
+  "campaign": "ocr-russia-v1",
+  "mode": "preview",
+  "timezone": "Asia/Yekaterinburg",
+  "database": "/opt/lead-flow/data/research.sqlite3",
+  "iva_root": "/opt/iva",
+  "crm_url": "https://lead-flow-ten-virid.vercel.app",
+  "crm_token_env": "LEAD_CRM_AGENT_TOKEN",
+  "sender": "ai.studio.ufa@mail.ru",
+  "max_candidates": 6,
+  "max_pages": 24,
+  "max_model_calls": 32,
+  "max_signal_age_days": 180,
+  "company_recheck_days": 30,
+  "lease_wait_seconds": 300,
+  "queries": [
+    "банкротство юридическая компания автоматизация обработка судебных актов ручной ввод документов",
+    "вакансия банкротство обработка судебных решений определений перенос данных документов",
+    "ищем подрядчика распознавание судебных документов OCR интеграция Россия",
+    "CRM интегратор банкротство распознавание документов внедрение запрос"
+  ]
+}

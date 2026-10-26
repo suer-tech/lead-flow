@@ -1,0 +1,33 @@
+[Unit]
+Description=Lead Flow OCR company research (drafts only)
+After=network-online.target iva-browser-coordinator.service iva-research-fetch.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=iva
+Group=iva
+WorkingDirectory=/opt/lead-flow
+Environment=PYTHONPATH=/opt/iva:/opt/lead-flow
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/iva
+Environment=CODEX_HOME=/home/iva/.codex
+Environment=PATH=/opt/iva/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=FINANCE_CODEX_EXE=/usr/local/bin/iva-codex
+EnvironmentFile=-/etc/lead-flow/research.env
+ExecStart=/opt/iva/.venv/bin/python /opt/lead-flow/scheduled.py
+# Full cycles finish naturally; a timer must not kill a running research cycle.
+TimeoutStartSec=infinity
+UMask=0077
+Nice=10
+CPUQuota=35%
+MemoryHigh=512M
+MemoryMax=768M
+MemorySwapMax=128M
+Restart=no
+# iva-codex uses the existing root-owned namespace helper through sudo.
+# NoNewPrivileges would prevent that existing authorized transport from running.
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Private lead research backups and source retention (no models)
+
+[Service]
+Type=oneshot
+User=iva
+Group=iva
+WorkingDirectory=/opt/lead-flow
+Environment=PYTHONPATH=/opt/lead-flow
+ExecStart=/opt/iva/.venv/bin/python /opt/lead-flow/maintenance.py
+UMask=0077
+Nice=15
+CPUQuota=15%
+MemoryMax=128M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full

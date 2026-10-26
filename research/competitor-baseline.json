@@ -1,0 +1,110 @@
+{
+  "as_of": "2026-10-26",
+  "scope": "Desk research of public vendor documentation; no paid accounts, comparative processing tests or customer interviews performed",
+  "entries": [
+    {
+      "name": "DaData",
+      "category": "Generic extraction API",
+      "url": "https://dadata.ru/api/extract/",
+      "confirmed": "File plus JSON schema returns structured fields and per-field confidence; PDF/JPG/PNG up to 20 MB; documented default 10 requests/minute/IP.",
+      "price_observed": "3 RUB/page, separate from annual subscription",
+      "implication": "Generic extraction is a benchmark candidate, NOT an equivalent substitute. Its price cannot price our decision/condition/amount handling without a common-contract evaluation.",
+      "unknown": "Comparative accuracy on our court corpus; enterprise volume terms; suitability for each client's data policy"
+    },
+    {
+      "name": "Smart Engines",
+      "category": "Autonomous document SDK",
+      "url": "https://smartengines.ru/docs/smart-document-engine/",
+      "confirmed": "Autonomous SDK for structured documents, standard forms and primary accounting documents; documentation lists 70 document types and multiple operating systems.",
+      "price_observed": "Not established from the reviewed documentation",
+      "implication": "A strong alternative when local processing is essential. Our external-model pipeline cannot currently claim an equivalent closed contour.",
+      "unknown": "Support and accuracy for the exact bankruptcy documents; commercial quotation"
+    },
+    {
+      "name": "ContentCapture / Content AI",
+      "category": "Enterprise document processing platform",
+      "url": "https://contentai.ru/contentcapture",
+      "confirmed": "Annual-volume licensing through partners; subscriptions for one or three years; some modules are licensed separately.",
+      "price_observed": "Published recommended minimum 450000 RUB/year; actual partner price and configuration vary",
+      "implication": "Potential opening for a narrower implementation, but our lower total cost has not yet been measured.",
+      "unknown": "Comparable project implementation cost, required modules and exact workflow functionality"
+    },
+    {
+      "name": "ПАУ",
+      "category": "Bankruptcy workflow system",
+      "url": "https://russianit.ru/products/pau/",
+      "confirmed": "Existing case, creditor, task, correspondence and report workflow; templates and some imports. Already embedded in the target segment.",
+      "price_observed": "Published editions from 42880 RUB; this is not a per-page OCR tariff",
+      "implication": "Study first-hand complaints and current remaining corrections even though the vendor advertises automation. Do not presume reliability, satisfied users or that the whole product is replaceable by our OCR.",
+      "unknown": "Supported write integration for our fields; actual customer residual manual work"
+    },
+    {
+      "name": "ПАУ support documentation",
+      "category": "Workflow gap to validate with users",
+      "url": "https://support.russianit.ru/books/pomoshhnik-arbitraznogo-upravlyayushhego/page/zapolnenie-novogo-otceta-au-v-procedure-ri-ud-s-versii-43",
+      "confirmed": "Report instructions distinguish automatically populated sections from data that users still enter manually.",
+      "price_observed": null,
+      "implication": "Useful interview question and process map, not proof of a complaint, purchasing intent or a missing feature in every customer version.",
+      "unknown": "How often this occurs, its time cost, and whether document extraction solves it"
+    },
+    {
+      "name": "ПравоДела (ex. Casebook)",
+      "category": "Court monitoring and legal information",
+      "url": "https://pravo.tech/product/dela",
+      "confirmed": "Case monitoring, company checks, bankruptcy information and creditor registers; higher tier adds access to case materials and court filing.",
+      "price_observed": "Published annual Standard 78000 RUB and Pro 108000 RUB",
+      "implication": "First ask whether required data is already available via the incumbent. Extracting it again may add no value.",
+      "unknown": "Client-specific API/export terms and remaining integration gaps"
+    },
+    {
+      "name": "Bankro.TECH",
+      "category": "Existing bankruptcy automation",
+      "url": "https://bankro.tech/files/user_manual.pdf",
+      "confirmed": "User manual describes document handling and a work queue for judicial acts not automatically recognized. The manual is historical.",
+      "price_observed": "Current comparable tariff not established",
+      "implication": "Automated court-act processing is not a new category. Explore unresolved exceptions and integration, not unsupported uniqueness claims.",
+      "unknown": "Current product version, exact extraction accuracy, customer satisfaction and present commercial terms"
+    },
+    {
+      "name": "ArbitrKIT",
+      "category": "Vertical CRM / possible distribution partner",
+      "url": "https://arbitrkit.com/",
+      "confirmed": "Advertises bankruptcy CRM with document generation, payments and analytics.",
+      "price_observed": "Not established for a comparable extraction integration",
+      "implication": "Partner hypothesis only. A product website proves sector fit, not that the company wants our OCR.",
+      "unknown": "Customer requests for extraction, API capability, existing suppliers and willingness to partner"
+    },
+    {
+      "name": "ABBYY",
+      "category": "International document processing benchmark",
+      "url": "https://www.abbyy.com/solutions/legal/",
+      "confirmed": "Vendor describes extraction and validation for legal workflows and publishes customer examples.",
+      "price_observed": "No comparable public quote established",
+      "implication": "Benchmark workflow and review capabilities. Vendor success stories are not independent demand evidence for Russian prospects.",
+      "unknown": "Relevant availability/terms, like-for-like performance and customer-side review evidence"
+    },
+    {
+      "name": "Rafinad.AI",
+      "category": "Direct bankruptcy workflow alternative",
+      "url": "https://www.rafinadai.ru/kakdobavitproceduru",
+      "confirmed": "Official instructions describe court-act upload and automatic procedure-field population. These are vendor claims, not independently tested accuracy.",
+      "price_observed": "No like-for-like extraction price established",
+      "implication": "Include as a direct comparison candidate, with user reviews and task-level tests. Do not confuse it with rafinad.io.",
+      "unknown": "Current accuracy, customer correction time, integration fit and total cost"
+    }
+  ],
+  "unverified_claims": [
+    "We outperform these vendors",
+    "Their customers want to switch",
+    "Every remaining manual field is an OCR problem",
+    "A vacancy for an OCR developer indicates willingness to buy a service"
+  ],
+  "next_evidence": [
+    "Independent customer accounts with exact workflow context",
+    "Five buyer interviews about the last actual document-handling incident",
+    "A blinded common-corpus comparison against at least one available alternative",
+    "A paid pilot or an explicit refusal with reason"
+  ],
+  "evidence_standard": "Vendor statements are documented capabilities, not verified effectiveness. User testimony, reproduced failures and comparative benchmarks are separate evidence classes.",
+  "customer_reviews": "customer-review-evidence.json"
+}

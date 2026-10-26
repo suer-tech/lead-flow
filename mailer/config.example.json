@@ -1,0 +1,16 @@
+{
+  "enabled": false,
+  "send_enabled": false,
+  "sender": "ai.studio.ufa@mail.ru",
+  "password_file": "",
+  "crm_url": "https://lead-flow-ten-virid.vercel.app",
+  "crm_token_env": "LEAD_CRM_AGENT_TOKEN",
+  "crm_token_file": "",
+  "state_path": "/opt/iva/data/lead-flow/mail-dispatch.sqlite3",
+  "inbox_state_path": "/opt/iva/data/lead-flow/mail-inbox.sqlite3",
+  "max_sends_per_run": 3,
+  "max_seconds": 120,
+  "http_timeout": 15,
+  "mail_timeout": 30,
+  "batch_size": 50
+}
