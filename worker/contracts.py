@@ -128,6 +128,8 @@ def validate_assessment(candidate, assessment, sources, today, max_age=180):
         errors.append("email_invalid")
     elif email not in compact(assessment.get("contact_quote", "")).lower():
         errors.append("email_not_in_official_quote")
+    elif re.match(r"^(?:hr|career|careers|job|jobs|resume|resumes|press|privacy|dpo|abuse|noreply|no-reply)(?:[._+-]|@)", email, re.I):
+        errors.append("email_not_business_recipient")
     if compact(assessment.get("company_name", "")) != compact(candidate["company_name"]):
         errors.append("company_name_changed")
     if assessment.get("signal_kind") in ("none", "existing_solution") or not assessment.get("current_unmet_need"):
@@ -167,6 +169,16 @@ def accepted_review(review):
 
 def accepted_research_review(review):
     return all(review.get(k) is True for k in ("company_attribution_valid", "fit_valid", "process_quote_supports_workflow"))
+
+
+def accepted_discovery_review(review):
+    # A matching legal practice/product is enough to ASK whether extraction is
+    # relevant. It does not establish an existing manual operation or pain.
+    return all(review.get(k) is True for k in ("company_attribution_valid", "fit_valid", "contact_official"))
+
+
+def accepted_potential_review(review):
+    return all(review.get(k) is True for k in ("company_attribution_valid", "fit_valid"))
 
 
 def validate_letter(candidate, assessment, proposal, sources):

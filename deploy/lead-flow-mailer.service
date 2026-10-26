@@ -12,7 +12,8 @@ WorkingDirectory=/opt/lead-flow
 Environment=PYTHONPATH=/opt/lead-flow
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/iva/.venv/bin/python -m mailer --config /etc/lead-flow/mail.json run
-TimeoutStartSec=300
+# A started SMTP/receipt transaction finishes at its own safe boundary.
+TimeoutStartSec=infinity
 UMask=0077
 Nice=15
 CPUQuota=15%

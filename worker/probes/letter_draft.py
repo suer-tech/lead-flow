@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from ..contracts import accepted_research_review, accepted_review, domain
+from ..contracts import accepted_research_review, accepted_discovery_review, accepted_review, domain
 from ..engine import Engine, fingerprint, load_config
 from ..store import Store, dumps
 from .quote_repair import CachedAnalysisRuntime, digest, snapshot
@@ -39,7 +39,8 @@ def run_probe(config_path, source_database, source_run, company_domain, output_p
     review = json.loads(saved["review"] or "{}")
     validation = json.loads(saved["validation"] or "{}")
     assessment = json.loads(saved["assessment"])
-    if not accepted_research_review(review) or not validation.get("contact_valid") or not review.get("contact_official"):
+    reviewed = accepted_research_review(review) or (config.get('discovery_outreach') and validation.get('valid') and accepted_discovery_review(review))
+    if not reviewed or not validation.get("contact_valid") or not review.get("contact_official"):
         raise ValueError("source_candidate_not_reviewed_for_local_letter")
     config.update(database=str(output), campaign="letter-probe-" + digest([source_run, host])[:16], enabled=False,
         mode="preview", queries=["Only reuse a reviewed candidate for isolated writing and letter review"],
@@ -63,6 +64,7 @@ def run_probe(config_path, source_database, source_run, company_domain, output_p
         result = json.loads(row["result"]) if row["result"] else None
         letter_review = json.loads(row["letter_review"]) if row["letter_review"] else None
         qualified = validation.get("eligible") and accepted_review(review) and assessment["signal_kind"] in ("explicit_need", "manual_work")
+        expected = 'qualified' if qualified else 'contact_ready' if config.get('discovery_outreach') else 'needs_review'
         report = {"source_run": source_run, "probe_run": ident, "domain": host,
             "state": store.run(ident)["state"], "model_calls": store.run(ident)["model_calls"],
             "candidate_stage": row["stage"], "candidate_error": row["error"], "writer_attempts": row["letter_attempts"],
@@ -70,7 +72,8 @@ def run_probe(config_path, source_database, source_run, company_domain, output_p
             "assessment_unchanged": json.loads(row["assessment"]) == assessment,
             "research_review_unchanged": json.loads(row["review"]) == review,
             "only_letter_models": not runtime.forbidden_calls, "forbidden_calls": runtime.forbidden_calls,
-            "qualification_not_promoted": bool(result) and result["lead"]["qualification_status"] == ("qualified" if qualified else "needs_review"),
+            "qualification_not_promoted": bool(result) and result["lead"]["qualification_status"] == expected,
+            "expected_qualification": expected,
             "letter_review": letter_review, "result": result, "email_sending": False, "crm_calls": 0, "outcome_ok": outcome.get("ok")}
         report["passed"] = bool(result and result.get("draft") and letter_review and letter_review.get("approved")) and all(
             report[key] for key in ("source_snapshot_unchanged", "assessment_unchanged", "research_review_unchanged", "only_letter_models", "qualification_not_promoted"))
