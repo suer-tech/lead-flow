@@ -1,3 +1,18 @@
+# Current acquisition policy
+
+Owner update, 26 October 2026: expand acquisition throughout the day. New campaign
+ocr-russia-v3 uses 120-minute slots from09:00to21:00 Yekaterinburg, up to12
+companies/72URL attempts/70model calls per slot, eight diversified queries.
+No catch-up replay; pending checkpoints resume first. contact_ready is a separate
+status for independently verified fit/process and official contact with unknown
+need. Owner authorizes one contextual discovery email/company, max100 distinct
+companies/local day, at least300seconds apart. Keep unknown intent unknown;
+source/contact/letter checks, one-first-letter ledger, refusals and uncertain
+sends remain binding. CRM_DISCOVERY_OUTREACH_ENABLED allows policy-approved queue
+entries; CRM_OUTREACH_ENABLED and mailbox switches independently gate sending.
+Mailbox credentials are still absent; SMTP/IMAP remain disabled until commissioned.
+This supersedes the earlier once-daily search and qualified-only draft admission.
+
 # Lead Flow: OCR commercial validation
 
 Owner priority (26 October 2026): establish WHO has a costly unsolved problem,

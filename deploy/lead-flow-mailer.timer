@@ -1,0 +1,10 @@
+[Unit]
+Description=Lead Flow email queue every five minutes during business hours
+
+[Timer]
+OnCalendar=*-*-* 09..21:00/5:00 Asia/Yekaterinburg
+Persistent=false
+Unit=lead-flow-mailer.service
+
+[Install]
+WantedBy=timers.target

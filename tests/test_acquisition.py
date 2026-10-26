@@ -87,6 +87,19 @@ class AcquisitionTests(unittest.TestCase):
         body = "Please do not contact us again" if classification == "refused" else "Please tell us about a pilot"
         return {"message_id": "<reply-001@example.org>", "from_email": from_email or message["to"], "in_reply_to": message["message_id"], "body": body, "received_at": datetime.now(timezone.utc).isoformat(), "classification": classification, "classification_quote": body}
 
+    def test_claims_are_paced_and_failed_attempts_consume_daily_company_budget(self):
+        first=self.ingest();letter=self.draft(first['lead_id']);self.ready(letter['id'])
+        second=self.ingest(self.candidate(key='second-company-key',domain='other.example.org'))
+        letter2=self.draft(second['lead_id'],key='second-letter-key');self.ready(letter2['id'])
+        with patch.dict(os.environ,{'CRM_DAILY_SEND_LIMIT':'100','CRM_SEND_INTERVAL_SECONDS':'300'}):
+            message=self.claim()
+            reply=self.client.post('/api/agent/outreach/claim',headers=self.agent).json()
+            self.assertEqual('paced',reply['reason'])
+        result={'claim_token':message['claim_token'],'outcome':'failed_before_send','receipt':'Connection failed before DATA'}
+        self.assertEqual(200,self.client.post(f"/api/agent/outreach/{message['id']}/result",headers=self.agent,json=result).status_code)
+        with patch.dict(os.environ,{'CRM_DAILY_SEND_LIMIT':'1','CRM_SEND_INTERVAL_SECONDS':'0'}):
+            self.assertEqual('daily_limit',self.client.post('/api/agent/outreach/claim',headers=self.agent).json()['reason'])
+
     def test_fresh_database_is_empty_and_agent_auth_is_separate(self):
         self.module.init_database()
         self.assertEqual(self.client.get("/api/leads").status_code, 401)

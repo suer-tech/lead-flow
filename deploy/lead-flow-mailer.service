@@ -1,0 +1,26 @@
+[Unit]
+Description=Lead Flow email queue and reply check
+After=network-online.target lead-flow-crm.socket
+Wants=network-online.target
+ConditionPathExists=/etc/lead-flow/mail-app-password
+
+[Service]
+Type=oneshot
+User=iva
+Group=iva
+WorkingDirectory=/opt/lead-flow
+Environment=PYTHONPATH=/opt/lead-flow
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/iva/.venv/bin/python -m mailer --config /etc/lead-flow/mail.json run
+TimeoutStartSec=300
+UMask=0077
+Nice=15
+CPUQuota=15%
+MemoryHigh=128M
+MemoryMax=256M
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/iva/data/lead-flow
+

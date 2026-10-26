@@ -21,11 +21,23 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class MailCrmClient:
     def __init__(self, config):
         config.validate()
+        self.transport = None
+        if config.crm_transport == 'iva_vpn':
+            from worker.crm_transport import SocketCrmTransport
+            self.transport = SocketCrmTransport({'crm_url':config.crm_url,'crm_transport':'iva_vpn'})
+            return
         self.base, self.token = config.crm_url.rstrip("/"), config.token()
         self.timeout = config.http_timeout
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def post(self, path, payload):
+        if self.transport is not None:
+            try:
+                return self.transport.post(path, payload)
+            except urllib.error.HTTPError as exc:
+                raise CrmError('crm_http_error', exc.code) from None
+            except (urllib.error.URLError, OSError, ValueError):
+                raise CrmError('crm_unavailable') from None
         request = urllib.request.Request(self.base + path,
             data=json.dumps(payload, ensure_ascii=False).encode(), method="POST",
             headers={"Authorization": "Bearer " + self.token, "Content-Type": "application/json"})

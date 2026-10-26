@@ -17,8 +17,15 @@ from .transport import SendResult, _address, compose, send_one
 
 def doctor(config: DispatcherConfig):
     checks, issues = {}, []
+    def crm_presence():
+        if config.crm_transport == 'iva_vpn':
+            import stat
+            if not stat.S_ISSOCK(Path('/run/lead-flow-crm.sock').stat().st_mode):
+                raise ValueError('crm_socket_missing')
+        else:
+            config.token()
     for name, check in (("configuration", config.validate), ("sender", lambda: _address(config.mail.sender)),
-                        ("mail_credential_file", config.mail.password), ("crm_credential", config.token)):
+                        ("mail_credential_file", config.mail.password), ("crm_credential", crm_presence)):
         try:
             check()
             checks[name] = True
