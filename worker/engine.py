@@ -37,6 +37,8 @@ def load_config(path):
     ZoneInfo(value["timezone"])
     if value.get("crm_url") and not public_url(value["crm_url"]).startswith("https://"):
         raise ValueError("crm_requires_https")
+    from .crm_transport import validate_config
+    validate_config(value)
     return value
 
 
@@ -292,21 +294,30 @@ class Engine:
             if row["stage"] == "letter_ready":
                 return json.loads(row["letter"])
             if row["stage"] == "write_letter":
-                feedback = json.loads(row["letter_review"]) if row["letter_review"] else None
+                feedback = None
+                if row["letter_review"]:
+                    previous = json.loads(row["letter"]) if row["letter"] else None
+                    rendered = make_draft(candidate, previous) if isinstance(previous, dict) and all(
+                        isinstance(previous.get(key), str) for key in ("subject", "observation", "pilot_focus", "question")) else None
+                    feedback = {"review": json.loads(row["letter_review"]), "previous_proposal": previous, "previous_letter": rendered}
                 proposal = self.model(run_id, "compose", candidate, assessment, sources, feedback)
                 attempts = row["letter_attempts"] + 1
-                errors = validate_letter(candidate, assessment, proposal, sources)
-                stage = "review_letter" if not errors else "write_letter" if attempts < 2 else "draft_rejected"
-                self.store.update_candidate(run_id, host, letter=proposal, letter_attempts=attempts,
-                    stage=stage, letter_review={"validation_errors": errors} if errors else None,
-                    error="letter_validation_rejected" if errors else None)
-                if errors:
-                    self.store.event(run_id, "letter", "letter_validation_rejected")
-                    if stage == "draft_rejected":
-                        return None
-                    continue
             else:
                 proposal = json.loads(row["letter"])
+                attempts = row["letter_attempts"]
+            # The author only writes prose. Keep the already reviewed evidence
+            # verbatim, even if a legacy adapter supplies different provenance.
+            proposal = {**proposal, "source_url": assessment.get("signal_url"), "source_quote": assessment.get("signal_quote")}
+            errors = validate_letter(candidate, assessment, proposal, sources)
+            stage = "review_letter" if not errors else "write_letter" if attempts < 2 else "draft_rejected"
+            self.store.update_candidate(run_id, host, letter=proposal, letter_attempts=attempts,
+                stage=stage, letter_review={"validation_errors": errors} if errors else None,
+                error="letter_validation_rejected" if errors else None)
+            if errors:
+                self.store.event(run_id, "letter", "letter_validation_rejected")
+                if stage == "draft_rejected":
+                    return None
+                continue
             # Both model calls are separate persisted checkpoints. A critic
             # failure resumes here without repeating discovery or the writer.
             verdict = self.model(run_id, "review_letter", candidate, assessment, sources, proposal)

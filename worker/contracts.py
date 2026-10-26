@@ -35,8 +35,7 @@ CRITIQUE = obj({"company_attribution_valid": BOOL, "need_quote_supports_claim": 
     "process_quote_supports_workflow": BOOL,
     "reason": STR, "unknowns": STRINGS})
 LETTER = obj({"subject": STR, "observation": STR, "question": STR,
-    "pilot_focus": STR, "offer_kind": {"type": "string", "enum": ["direct_pilot", "partner_integration"]},
-    "source_url": STR, "source_quote": STR})
+    "pilot_focus": STR, "offer_kind": {"type": "string", "enum": ["direct_pilot", "partner_integration"]}})
 LETTER_REVIEW_FLAGS = ("observation_grounded", "company_attribution_valid", "offer_supported",
     "no_invented_claims", "no_unverified_buying_intent", "no_misleading_relationship",
     "respectful_and_specific", "one_clear_question")
@@ -190,7 +189,9 @@ def validate_letter(candidate, assessment, proposal, sources):
         errors.append("offer_kind_mismatches_segment")
     by_url = {source["url"]: source for source in sources if source.get("ok") and source.get("text")}
     source = by_url.get(proposal.get("source_url"))
-    if proposal.get("source_url") != assessment["signal_url"] or not source or not exact_quote(proposal.get("source_quote"), source["text"]):
+    if (proposal.get("source_url") != assessment.get("signal_url")
+            or proposal.get("source_quote") != assessment.get("signal_quote")
+            or not source or not exact_quote(proposal.get("source_quote"), source["text"])):
         errors.append("letter_source_unverified")
     return errors
 
@@ -202,13 +203,11 @@ def accepted_letter_review(review):
 def make_draft(candidate, proposal):
     # The writer cannot choose the sender/recipient, invent a signature, add a
     # tracking URL, or turn uncertainty into a guarantee. Claims are reviewed.
-    offer = ("Предлагаю обсудить совместный пилот для одного клиента: " if proposal["offer_kind"] == "partner_integration"
-        else "Предлагаю проверить на небольшой выборке ваших документов: ")
+    offer = proposal["pilot_focus"].strip().rstrip(". ") + "."
     return {"subject": proposal["subject"].strip(), "body": (
         "Здравствуйте!\n\n" + proposal["observation"].strip() + "\n\n"
         "Я разрабатываю модуль извлечения данных из судебных решений и определений. "
-        + offer + proposal["pilot_focus"].strip().rstrip(". ") + ". "
-        "Точность результата и время проверки специалистом измерим на пилоте.\n\n"
+        + offer + "\n\n"
         + proposal["question"].strip() + "\n\n"
         "Если это не к вам или уже решено, сообщите — больше не буду беспокоить.\n\nAI Studio")}
 

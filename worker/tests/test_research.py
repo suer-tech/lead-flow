@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch, Mock
 from urllib.error import HTTPError
 
-from worker.contracts import exact_quote, public_url, validate_assessment, LETTER_REVIEW_FLAGS
+from worker.contracts import exact_quote, public_url, validate_assessment, LETTER, LETTER_REVIEW_FLAGS
 from worker.engine import Engine
 from worker.runtime import NoRedirect
 from worker.store import Store
@@ -106,9 +106,9 @@ class FakeRuntime:
         return {"subject": "Вопрос об обработке судебных определений",
             "observation": "Увидел на вашем сайте описание задачи: " + assessment["use_case"] + ".",
             "question": "Актуальна ли сейчас задача извлечения данных из судебных определений?",
-            "pilot_focus": "извлечение сумм и реквизитов с проверкой результата специалистом",
-            "offer_kind": "partner_integration" if candidate["segment"] == "crm_integrator" else "direct_pilot",
-            "source_url": assessment["signal_url"], "source_quote": assessment["signal_quote"], **self.proposal_patch}
+            "pilot_focus": ("Предлагаю совместный пилот для одного клиента: проверить извлечение сумм и реквизитов на его образцах."
+                if candidate["segment"] == "crm_integrator" else "Предлагаю проверить извлечение сумм и реквизитов на небольшой выборке ваших документов."),
+            "offer_kind": "partner_integration" if candidate["segment"] == "crm_integrator" else "direct_pilot", **self.proposal_patch}
 
     def review_letter(self, candidate, assessment, sources, proposal):
         self.calls.append("review_letter")
@@ -427,11 +427,44 @@ class ResearchTests(unittest.TestCase):
         self.assertIsNone(json.loads(row["result"])["draft"])
         self.assertIn("question_contains_external_address_or_markup", json.loads(row["letter_review"])["validation_errors"])
 
-    def test_writer_must_ground_observation_in_exact_source_quote(self):
-        self.runtime.proposal_patch = {"source_quote": "Компания уже согласовала бюджет миллион рублей"}
+    def test_writer_cannot_override_checked_provenance_even_if_adapter_adds_fields(self):
+        self.runtime.proposal_patch = {"source_url": "https://evil.example/invented",
+            "source_quote": ASSESSMENT["signal_quote"].swapcase()}
         self.engine.run()
+        self.assertEqual("preview", self.candidate()["stage"])
+        proposal = json.loads(self.candidate()["letter"])
+        self.assertEqual(ASSESSMENT["signal_url"], proposal["source_url"])
+        self.assertEqual(ASSESSMENT["signal_quote"], proposal["source_quote"])
+        self.assertEqual(1, self.runtime.calls.count("compose"))
+        self.assertEqual(1, self.runtime.calls.count("review_letter"))
+
+    def test_invalid_saved_assessment_provenance_cannot_pass_letter_validation(self):
+        self.runtime.fail_letter_review = True
+        self.assertFalse(self.engine.run()["ok"])
+        row = self.candidate()
+        invalid = {**json.loads(row["assessment"]), "signal_quote": "Компания уже согласовала бюджет миллион рублей"}
+        self.store.update_candidate(row["run_id"], row["domain"], assessment=invalid)
+        self.assertTrue(self.engine.run()["ok"])
         self.assertEqual("draft_rejected", self.candidate()["stage"])
-        self.assertNotIn("review_letter", self.runtime.calls)
+        self.assertEqual(1, self.runtime.calls.count("review_letter"))
+        self.assertIsNone(json.loads(self.candidate()["result"])["draft"])
+        self.assertIn("letter_source_unverified", json.loads(self.candidate()["letter_review"])["validation_errors"])
+
+    def test_valid_provenance_does_not_bypass_semantic_observation_review(self):
+        self.runtime.proposal_patch = {"observation": "Ваша компания уже выделила миллион рублей на покупку нашего OCR."}
+        verdict = {**{flag: True for flag in LETTER_REVIEW_FLAGS}, "approved": False,
+            "observation_grounded": False, "no_invented_claims": False,
+            "reason": "Verified quote does not support the budget claim", "revision_feedback": "Убрать выдуманный бюджет"}
+        self.runtime.letter_reviews = [verdict, verdict]
+        self.engine.run()
+        self.assertEqual(2, self.runtime.calls.count("review_letter"))
+        self.assertEqual("draft_rejected", self.candidate()["stage"])
+        self.assertIsNone(json.loads(self.candidate()["result"])["draft"])
+
+    def test_writer_schema_leaves_provenance_to_code(self):
+        self.assertNotIn("source_url", LETTER["properties"])
+        self.assertNotIn("source_quote", LETTER["properties"])
+        self.assertFalse(LETTER["additionalProperties"])
 
     def test_critic_requests_one_persisted_letter_revision(self):
         verdict = {**{flag: True for flag in LETTER_REVIEW_FLAGS}, "approved": False,
@@ -441,7 +474,9 @@ class ResearchTests(unittest.TestCase):
         row = self.candidate()
         self.assertEqual("preview", row["stage"])
         self.assertEqual(2, row["letter_attempts"])
-        self.assertEqual(verdict, self.runtime.letter_feedback[1])
+        self.assertEqual(verdict, self.runtime.letter_feedback[1]["review"])
+        self.assertIn("subject", self.runtime.letter_feedback[1]["previous_proposal"])
+        self.assertIn("body", self.runtime.letter_feedback[1]["previous_letter"])
         self.assertEqual(1, self.runtime.calls.count("critique"))
 
     def test_rejected_letter_never_publishes_even_with_qualified_company(self):
@@ -477,6 +512,8 @@ class ResearchTests(unittest.TestCase):
         payload = json.loads(self.candidate()["result"])
         self.assertIn("совместный пилот для одного клиента", payload["draft"]["body"])
         self.assertEqual("partner_integration", json.loads(self.candidate()["letter"])["offer_kind"])
+        self.assertEqual(1, payload["draft"]["body"].count("совместный пилот для одного клиента"))
+        self.assertNotIn("измерим на пилоте", payload["draft"]["body"])
 
     def test_next_cycle_skips_recent_company_and_passes_frozen_history_to_search(self):
         self.engine.run(slot="first"); result = self.engine.run(slot="next-day")

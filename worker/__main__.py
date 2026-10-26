@@ -4,20 +4,42 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 
 from .engine import Engine, load_config
 from .store import Store
 
+CRM_TOKEN = Path('/etc/lead-flow/crm-agent.token')
+CRM_SOCKET = Path('/run/lead-flow-crm.sock')
+
+
+def fixed_metadata(path, socket=False):
+    try:
+        mode = path.lstat().st_mode
+        return stat.S_ISSOCK(mode) if socket else stat.S_ISREG(mode)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+
 
 def doctor(config):
+    from .crm_transport import validate_config
     root = Path(config["iva_root"])
+    transport = validate_config(config)
+    private = transport == 'iva_vpn'
     return {"mode": config["mode"], "schedule_enabled_in_config": config["enabled"],
         "iva_runtime_present": (root / "iva_integration/demand_sources.py").is_file(),
         "coordinator_socket_present": Path("/run/iva-browser/control.sock").exists(),
         "codex_login_present": (Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "auth.json").is_file(),
         "crm_url_configured": bool(config.get("crm_url")),
-        "crm_token_present": bool(os.environ.get(config.get("crm_token_env", "LEAD_CRM_AGENT_TOKEN"))),
+        "crm_transport": transport,
+        "crm_credential_source": "private_transport_helper_file_metadata" if private else "worker_environment_not_inspected",
+        "crm_token_present": fixed_metadata(CRM_TOKEN) if private else None,
+        "crm_socket_present": fixed_metadata(CRM_SOCKET, socket=True) if private else None,
+        "crm_credential_contents_checked": False, "crm_authentication_verified": False,
+        "crm_explanation": "Presence metadata does not verify token contents, helper enablement, authentication or current API connectivity.",
         "email_sending": False, "network_checks_performed": False,
         "config_file_does_not_enable_systemd": True}
 
