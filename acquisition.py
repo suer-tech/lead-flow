@@ -93,6 +93,28 @@ class Approval(StrictModel):
     action: Literal["approve", "cancel"]
 
 
+class DraftRevision(StrictModel):
+    idempotency_key: str = Field(min_length=8,max_length=160)
+    outreach_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    expected_content_hash: str = Field(pattern=r'^[a-f0-9]{64}$')
+    subject: str = Field(min_length=1,max_length=250)
+    body: str = Field(min_length=10,max_length=8000)
+    review_checks: dict[str,bool]
+
+    @field_validator('subject')
+    @classmethod
+    def subject_valid(cls,value):
+        return Draft.subject_valid(value)
+
+    @field_validator('review_checks')
+    @classmethod
+    def approved_review(cls,value):
+        from worker.contracts import LETTER_REVIEW_FLAGS
+        if set(value)!={'approved',*LETTER_REVIEW_FLAGS} or not all(value.values()):
+            raise ValueError('Independent letter review must approve every check')
+        return value
+
+
 class TransportResult(StrictModel):
     claim_token: str = Field(min_length=20, max_length=100)
     outcome: Literal["accepted", "failed_before_send", "rejected", "uncertain"]
@@ -180,6 +202,7 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
             "CREATE TABLE IF NOT EXISTS outreach (id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL, payload_hash TEXT NOT NULL, lead_id BIGINT NOT NULL REFERENCES leads(id), recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, contact_basis TEXT NOT NULL, basis_evidence TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, approved_at TEXT, message_id TEXT UNIQUE NOT NULL, claim_token TEXT, claimed_at TEXT, provider_message_id TEXT, receipt TEXT, accepted_at TEXT)",
             "CREATE TABLE IF NOT EXISTS lead_inbox (message_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, lead_id BIGINT REFERENCES leads(id), outreach_id TEXT REFERENCES outreach(id), from_email TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, received_at TEXT NOT NULL, classification TEXT NOT NULL, classification_quote TEXT NOT NULL, match_state TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS acquisition_runs (run_id TEXT PRIMARY KEY, state TEXT NOT NULL, summary TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS outreach_text_revisions (key TEXT PRIMARY KEY,payload_hash TEXT NOT NULL,outreach_id TEXT NOT NULL REFERENCES outreach(id),old_subject TEXT NOT NULL,old_body TEXT NOT NULL,new_hash TEXT NOT NULL,review_checks TEXT NOT NULL,created_at TEXT NOT NULL)",
         ]
         for statement in tables:
             db.execute(statement)
@@ -391,6 +414,32 @@ def install(app, connect, sql, serialize, require_owner, use_postgres: bool) -> 
             if auto_ready:
                 event(db,row["id"],"campaign_policy_approved")
             return {"id": key, "state": state, "replayed": False}
+
+    @agent.post('/drafts/revise')
+    def revise_draft(payload: DraftRevision):
+        fingerprint=digest(payload.model_dump())
+        with transaction() as db:
+            previous=db.execute(sql('SELECT payload_hash,outreach_id FROM outreach_text_revisions WHERE key=?'),(payload.idempotency_key,)).fetchone()
+            if previous:
+                if previous['payload_hash']!=fingerprint:raise HTTPException(409,'Revision key already used')
+                current=db.execute(sql('SELECT id,state,message_id FROM outreach WHERE id=?'),(previous['outreach_id'],)).fetchone()
+                return {'id':current['id'],'state':current['state'],'message_id':current['message_id'],'replayed':True,'revised':True}
+            row=db.execute(sql('SELECT * FROM outreach WHERE id=?'),(payload.outreach_id,)).fetchone()
+            if not row:raise HTTPException(404,'Letter not found')
+            if row['state'] not in ('draft','ready') or row['claimed_at'] is not None:
+                raise HTTPException(409,'Only never-claimed drafts may be revised')
+            if digest({'subject':row['subject'],'body':row['body']})!=payload.expected_content_hash:
+                raise HTTPException(409,'Letter changed since review')
+            parent=lead(db,row['lead_id'])
+            if (parent['archived_at'] or parent['status']!='new' or is_suppressed(db,parent['company_domain'],row['recipient'])
+                    or not qualification_allows_letter(parent,row['purpose']) or parent['email'].lower()!=row['recipient'].lower()):
+                raise HTTPException(409,'Contact no longer eligible')
+            stamp=now();new_hash=digest({'subject':payload.subject,'body':payload.body})
+            db.execute(sql('INSERT INTO outreach_text_revisions VALUES(?,?,?,?,?,?,?,?)'),
+                (payload.idempotency_key,fingerprint,row['id'],row['subject'],row['body'],new_hash,json.dumps(payload.review_checks),stamp))
+            db.execute(sql('UPDATE outreach SET subject=?,body=?,updated_at=? WHERE id=?'),(payload.subject,payload.body,stamp,row['id']))
+            event(db,row['lead_id'],'draft_text_revised')
+            return {'id':row['id'],'state':row['state'],'message_id':row['message_id'],'content_hash':new_hash,'replayed':False,'revised':True}
 
     @owner.post("/outreach/{outreach_id}/review")
     def review(outreach_id: str, payload: Approval):

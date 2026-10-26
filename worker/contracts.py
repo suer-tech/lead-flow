@@ -216,9 +216,13 @@ def make_draft(candidate, proposal):
     # The writer cannot choose the sender/recipient, invent a signature, add a
     # tracking URL, or turn uncertainty into a guarantee. Claims are reviewed.
     offer = proposal["pilot_focus"].strip().rstrip(". ") + "."
+    introduction = ("Предлагаю встроить в ваш продукт ИИ-модуль" if candidate["segment"] == "crm_integrator"
+        else "Предлагаю внедрить ИИ")
     return {"subject": proposal["subject"].strip(), "body": (
         "Здравствуйте!\n\n" + proposal["observation"].strip() + "\n\n"
-        "Я разрабатываю модуль извлечения данных из судебных решений и определений. "
+        + introduction + ", который сам извлекает из судебных решений и определений номера дел, стороны, суммы, сроки и условия — без ручного переноса данных.\n\n"
+        "Это только примеры: могу настроить извлечение любых других нужных вам сведений, которые есть в документе.\n\n"
+        "На нашем бенчмарке обработка одного документа сократилась с 30 минут до 1 минуты; оценка качества извлечения — 95%.\n\n"
         + offer + "\n\n"
         + proposal["question"].strip() + "\n\n"
         "Если это не к вам или уже решено, сообщите — больше не буду беспокоить.\n\nAI Studio")}

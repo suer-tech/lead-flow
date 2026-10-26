@@ -26,14 +26,52 @@
     "A production SaaS SLA, multi-tenant security certification or commercial terms not yet established"
   ],
   "priority_segments": [
-    {"id": "bankruptcy_operations", "buyer": "Owner or operations head of a bankruptcy legal firm / financial-manager team", "job": "Transfer fields from incoming court documents into the existing case system", "required_validation": "Actual manual work, monthly volume, current tools, data restrictions, budget owner"},
-    {"id": "vertical_crm_partner", "buyer": "Owner or product head of a bankruptcy CRM / legal systems integrator", "job": "Embed a specialised extractor into an installed customer workflow", "required_validation": "Unsolved customer requests, partner access to customers, supported integration, economic incentive"},
-    {"id": "creditor_portfolio", "buyer": "Head of legal operations handling many creditor claims", "job": "Extract creditor, amounts, claim components and ruling outcome", "required_validation": "Suitable documents and volumes, incumbent process, procurement and security constraints"}
+    {
+      "id": "bankruptcy_operations",
+      "buyer": "Owner or operations head of a bankruptcy legal firm / financial-manager team",
+      "job": "Transfer fields from incoming court documents into the existing case system",
+      "required_validation": "Actual manual work, monthly volume, current tools, data restrictions, budget owner"
+    },
+    {
+      "id": "vertical_crm_partner",
+      "buyer": "Owner or product head of a bankruptcy CRM / legal systems integrator",
+      "job": "Embed a specialised extractor into an installed customer workflow",
+      "required_validation": "Unsolved customer requests, partner access to customers, supported integration, economic incentive"
+    },
+    {
+      "id": "creditor_portfolio",
+      "buyer": "Head of legal operations handling many creditor claims",
+      "job": "Extract creditor, amounts, claim components and ruling outcome",
+      "required_validation": "Suitable documents and volumes, incumbent process, procurement and security constraints"
+    }
   ],
-  "sales_unknowns": ["Product name and permitted case-study references", "Pilot price and delivery capacity", "Per-page processing cost and human-review cost", "Data processing agreement and storage/retention policy", "Specific client integrations"],
+  "sales_unknowns": [
+    "Product name and permitted case-study references",
+    "Pilot price and delivery capacity",
+    "Per-page processing cost and human-review cost",
+    "Data processing agreement and storage/retention policy",
+    "Specific client integrations"
+  ],
   "local_evidence": [
     "E:/Projects/OCR_document_reader/OCR-document-parser/src/ocr_platform/config/pipelines/system/router.yaml",
     "E:/Projects/OCR_document_reader/OCR-document-parser/src/ocr_platform/config/pipelines/profiles/court_decision_ru.yaml",
     "E:/Projects/OCR_document_reader/analysis/deploy-2026-10-25/receipt.json"
-  ]
+  ],
+  "owner_reported_benchmark": {
+    "confirmed_at": "2026-10-26",
+    "source": "Direct owner confirmation in this conversation: real module performance measured by benchmark",
+    "manual_minutes_per_document": 30,
+    "automated_minutes_per_document": 1,
+    "quality_score_percent": 95,
+    "quality_metric_definition": null,
+    "sample_size": null,
+    "document_corpus": null,
+    "independently_reproduced_by_agent": false,
+    "permitted_claim": "На нашем бенчмарке обработка одного документа сократилась с 30 минут до 1 минуты; оценка качества извлечения — 95%.",
+    "limits": [
+      "Do not invent a field/document accuracy denominator, sample, corpus or independent audit",
+      "Do not generalize to every client document or promise no human validation",
+      "Automatic data extraction removes manual transfer, not every possible manual action"
+    ]
+  }
 }
