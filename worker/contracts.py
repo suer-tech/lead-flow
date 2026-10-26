@@ -19,6 +19,7 @@ DISCOVERY = obj({"companies": {"type": "array", "items": obj({
     "source_urls": STRINGS,
 })}})
 FOLLOWUP = obj({"source_urls": STRINGS})
+QUOTE_REPAIR = obj({"identity_quote": STR, "signal_quote": STR, "contact_quote": STR})
 ASSESSMENT = obj({
     "company_name": STR, "identity_url": STR, "identity_quote": STR,
     "signal_url": STR, "signal_quote": STR,
@@ -83,10 +84,31 @@ def exact_quote(quote, text):
     return 15 <= len(quoted) <= 400 and len(quoted.split()) <= 25 and quoted in compact(text)
 
 
+def citation_matches(quote, source, prefix):
+    text = str(source.get("text") or "")
+    if exact_quote(quote, text):
+        return True
+    if prefix == "contact":
+        # Header/footer contact fragments are a separate evidence class. They
+        # cannot establish identity/intent or be joined into an invented quote.
+        fragments = source.get("contact_fragments", [])
+        if isinstance(fragments, list):
+            return any(exact_quote(quote, item) for item in fragments[:4] if isinstance(item, str) and len(item) <= 400)
+    return False
+
+
+def source_readable(source, allow_contact=False):
+    if source.get("ok") is True and source.get("text"):
+        return True
+    return (allow_contact and source.get("contact_readable") is True
+        and isinstance(source.get("contact_fragments"), list)
+        and any(isinstance(value, str) and value for value in source["contact_fragments"][:4]))
+
+
 def validate_assessment(candidate, assessment, sources, today, max_age=180):
     """Every claim must refer to a fetched body, not a search result snippet."""
     errors = []
-    by_url = {row["url"]: row for row in sources if row.get("ok") is True and row.get("text")}
+    by_url = {row["url"]: row for row in sources if source_readable(row, allow_contact=True)}
     company_domain = domain(candidate["company_domain"])
     selected = {}
     for prefix in ("identity", "signal", "contact"):
@@ -96,7 +118,7 @@ def validate_assessment(candidate, assessment, sources, today, max_age=180):
             errors.append(prefix + "_url_invalid")
             continue
         source = by_url.get(url)
-        if not source or not exact_quote(assessment.get(prefix + "_quote"), source["text"]):
+        if not source or not source_readable(source, allow_contact=prefix == "contact") or not citation_matches(assessment.get(prefix + "_quote"), source, prefix):
             errors.append(prefix + "_quote_unverified")
             continue
         selected[prefix] = source

@@ -7,7 +7,7 @@ import re
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
-from .contracts import accepted_review, accepted_research_review, accepted_letter_review, compact, domain, make_draft, public_url, stable_key, validate_assessment, validate_letter
+from .contracts import accepted_review, accepted_research_review, accepted_letter_review, compact, domain, make_draft, public_url, source_readable, stable_key, validate_assessment, validate_letter
 from .store import dumps, now
 
 
@@ -43,7 +43,7 @@ def load_config(path):
 def fingerprint(config):
     keys = ("campaign", "queries", "max_candidates", "max_pages", "max_model_calls", "max_signal_age_days")
     value = {key: config[key] for key in keys}
-    value["pipeline_contract"] = 3
+    value["pipeline_contract"] = 4
     value["company_recheck_days"] = config.get("company_recheck_days", 30)
     root = Path(__file__).resolve().parents[1] / "research"
     value["brief_versions"] = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
@@ -69,8 +69,25 @@ class Engine:
         return result
 
     def discover(self, run_id):
-        excluded = json.loads(self.store.run(run_id)["excluded_domains"])
-        for query in self.store.rows("SELECT * FROM queries WHERE run_id=? AND state!='done' ORDER BY position", (run_id,)):
+        history = json.loads(self.store.run(run_id)["excluded_domains"])
+        for query in self.store.rows("SELECT * FROM queries WHERE run_id=? AND state NOT IN ('done','skipped') ORDER BY position", (run_id,)):
+            known = [row["domain"] for row in self.store.rows("SELECT domain FROM candidates WHERE run_id=? ORDER BY domain", (run_id,))]
+            capacity = self.config["max_candidates"] - len(known)
+            if capacity <= 0:
+                with self.store.db:
+                    self.store.db.execute("UPDATE queries SET state='skipped',candidate_quota=0 WHERE run_id=? AND position=?", (run_id, query["position"]))
+                self.store.event(run_id, "discovery", "query_skipped_capacity")
+                continue
+            if query["candidate_quota"] is None:
+                remaining = self.store.db.execute("SELECT COUNT(*) FROM queries WHERE run_id=? AND state NOT IN ('done','skipped')", (run_id,)).fetchone()[0]
+                quota = min(4, max(1, (capacity + remaining - 1) // remaining))
+                excluded = list(dict.fromkeys([*known, *history]))[:100]
+                with self.store.db:
+                    self.store.db.execute("UPDATE queries SET candidate_quota=?,search_exclusions=? WHERE run_id=? AND position=?",
+                        (quota, dumps(excluded), run_id, query["position"]))
+            else:
+                quota = query["candidate_quota"]
+                excluded = json.loads(query["search_exclusions"] or "[]")
             if query["attempts"] >= 3:
                 with self.store.db:
                     self.store.db.execute("UPDATE queries SET state='done' WHERE run_id=? AND position=?", (run_id, query["position"]))
@@ -78,7 +95,8 @@ class Engine:
                 continue
             with self.store.db:
                 self.store.db.execute("UPDATE queries SET attempts=attempts+1 WHERE run_id=? AND position=?", (run_id, query["position"]))
-            result = self.model(run_id, "search", query["query"], excluded)
+            result = self.model(run_id, "search", query["query"], excluded, quota)
+            accepted = []
             for raw in result.get("companies", [])[:4]:
                 try:
                     host = domain(raw["company_domain"])
@@ -95,12 +113,14 @@ class Engine:
                     self.store.event(run_id, "discovery", "invalid_candidate_rejected")
                     continue
                 candidate = {"company_name": name, "company_domain": host, "segment": raw["segment"], "source_urls": urls}
-                count = self.store.db.execute("SELECT COUNT(*) FROM candidates WHERE run_id=?", (run_id,)).fetchone()[0]
-                if count >= self.config["max_candidates"]:
+                if host in known or any(item["company_domain"] == host for item in accepted):
+                    continue
+                accepted.append(candidate)
+                if len(accepted) >= min(quota, capacity):
                     break
-                with self.store.db:
-                    self.store.db.execute("INSERT OR IGNORE INTO candidates(run_id,domain,data) VALUES(?,?,?)", (run_id, host, dumps(candidate)))
             with self.store.db:
+                self.store.db.executemany("INSERT OR IGNORE INTO candidates(run_id,domain,data) VALUES(?,?,?)",
+                    [(run_id, item["company_domain"], dumps(item)) for item in accepted])
                 self.store.db.execute("UPDATE queries SET state='done' WHERE run_id=? AND position=?", (run_id, query["position"]))
 
     def sources(self, run_id, candidate):
@@ -119,13 +139,20 @@ class Engine:
             self.store.event(run_id, "fetch", "source_started")
             raw = self.runtime.fetch(url)
             source = {key: raw.get(key) for key in ("ok", "url", "title", "text", "published_at", "fetched_at", "error_category", "http_status", "network_route")}
+            source["requested_url"] = url
+            source["network_route"] = raw.get("network") or raw.get("network_route")
             source["text"] = str(source.get("text") or "")[:16000]
+            fragments = raw.get("contact_fragments", [])
+            source["contact_fragments"] = [item for item in fragments[:4] if isinstance(item, str) and len(item) <= 400] if isinstance(fragments, list) else []
+            source["contact_readable"] = raw.get("contact_readable") is True
+            source["contact_fragments_hash"] = raw.get("contact_fragments_hash")
             try:
-                source["url"] = public_url(source["url"] or url)
+                source["url"] = public_url(raw.get("canonical_url") or raw.get("url") or url)
+                source["canonical_url"] = source["url"]
             except ValueError:
-                source.update(url=url, ok=False, text="", error_category="invalid_final_url")
+                source.update(url=url, ok=False, text="", contact_readable=False, contact_fragments=[], error_category="invalid_final_url")
             source["fetched_at"] = source.get("fetched_at") or now()
-            source["content_hash"] = hashlib.sha256(source["text"].encode()).hexdigest()
+            source["content_hash"] = hashlib.sha256(dumps({"text": source["text"], "contact_fragments": source["contact_fragments"]}).encode()).hexdigest()
             with self.store.db:
                 self.store.db.execute("INSERT OR IGNORE INTO pages(run_id,url,data) VALUES(?,?,?)", (run_id, url, dumps(source)))
             self.store.event(run_id, "fetch", "source_completed" if source.get("ok") else "source_unavailable")
@@ -137,17 +164,23 @@ class Engine:
             self.fetch(run_id, candidate)
             self.store.update_candidate(run_id, host, stage="assess")
         sources = self.sources(run_id, candidate)
-        readable = [s for s in sources if s.get("ok") is True and s.get("text")]
+        readable = [s for s in sources if source_readable(s, allow_contact=True)]
         current = self.store.rows("SELECT * FROM candidates WHERE run_id=? AND domain=?", (run_id, host))[0]
-        if current["stage"] == "assess":
-            assessment = self.model(run_id, "assess", candidate, readable) if readable else {}
-            for prefix in ("identity", "signal", "contact"):
-                try:
-                    assessment[prefix + "_url"] = public_url(assessment.get(prefix + "_url", ""))
-                except (ValueError, TypeError):
-                    pass  # The independent validator records missing/invalid URLs.
-            checked = validate_assessment(candidate, assessment, readable, self.clock().date(), self.config["max_signal_age_days"]) if readable else {
-                "valid": False, "eligible": False, "errors": ["no_readable_sources"], "email": "", "contact_valid": False}
+        if current["stage"] in ("assess", "assessment_checked", "citation_repair"):
+            if current["stage"] == "assess":
+                assessment = self.model(run_id, "assess", candidate, readable) if readable else {}
+                for prefix in ("identity", "signal", "contact"):
+                    try:
+                        assessment[prefix + "_url"] = public_url(assessment.get(prefix + "_url", ""))
+                    except (ValueError, TypeError):
+                        pass  # The independent validator records missing/invalid URLs.
+                checked = validate_assessment(candidate, assessment, readable, self.clock().date(), self.config["max_signal_age_days"]) if readable else {
+                    "valid": False, "eligible": False, "errors": ["no_readable_sources"], "email": "", "contact_valid": False}
+                self.store.update_candidate(run_id, host, assessment=assessment, validation=checked, stage="assessment_checked")
+            else:
+                assessment = json.loads(current["assessment"])
+                checked = json.loads(current["validation"])
+            assessment, checked = self.repair_citations(run_id, candidate, assessment, checked, readable)
             repairable = any(error.startswith(("identity_", "contact_", "email_", "signal_url_", "signal_quote_"))
                 or error in ("no_readable_sources", "remaining_workflow_gap_unknown", "no_current_unmet_need") for error in checked["errors"])
             followup = repairable and current["followup_attempts"] == 0 and self.store.db.execute(
@@ -185,6 +218,37 @@ class Engine:
             return
         self.prepare_result(run_id, candidate, assessment, checked, review, readable, proposal)
 
+    def repair_citations(self, run_id, candidate, assessment, checked, sources):
+        by_url = {source["url"]: source for source in sources if source_readable(source, allow_contact=True)}
+        targets = [prefix + "_quote" for prefix in ("identity", "signal", "contact")
+            if prefix + "_quote_unverified" in checked["errors"] and assessment.get(prefix + "_quote")
+            and assessment.get(prefix + "_url") in by_url
+            and source_readable(by_url[assessment[prefix + "_url"]], allow_contact=prefix == "contact")]
+        if not targets:
+            return assessment, checked
+        host = candidate["company_domain"]
+        row = self.store.rows("SELECT * FROM candidates WHERE run_id=? AND domain=?", (run_id, host))[0]
+        if row["citation_attempts"]:
+            record = json.loads(row["citation_repair"] or "{}")
+            if record.get("state") == "pending":
+                self.store.update_candidate(run_id, host, citation_repair={**record, "state": "unavailable"})
+                self.store.event(run_id, "citation", "repair_result_unavailable")
+            return assessment, checked
+        selected_urls = {assessment[key.replace("_quote", "_url")] for key in targets}
+        self.store.update_candidate(run_id, host, stage="citation_repair", citation_attempts=1,
+            citation_repair={"state": "pending", "fields": targets})
+        patch = self.model(run_id, "repair_quotes", candidate, assessment,
+            [by_url[url] for url in sorted(selected_urls)], targets)
+        # Apply only previously identified quotation fields. Even a malformed
+        # model result cannot change the URL, identity, email or need verdict.
+        repaired = {**assessment, **{key: patch[key] for key in targets if isinstance(patch.get(key), str)}}
+        validation = validate_assessment(candidate, repaired, sources, self.clock().date(), self.config["max_signal_age_days"])
+        remaining = [key for key in targets if key + "_unverified" in validation["errors"]]
+        self.store.update_candidate(run_id, host, assessment=repaired, validation=validation, stage="assessment_checked",
+            citation_repair={"state": "rejected" if remaining else "complete", "fields": targets, "remaining": remaining})
+        self.store.event(run_id, "citation", "repair_rejected" if remaining else "repair_completed")
+        return repaired, validation
+
     def followup(self, run_id, row):
         candidate = json.loads(row["data"])
         checked = json.loads(row["validation"])
@@ -201,12 +265,13 @@ class Engine:
                 followup={"state": "searching", "errors": checked["errors"], "excluded_urls": candidate["source_urls"]})
             result = self.model(run_id, "followup", candidate, checked["errors"], self.sources(run_id, candidate))
             added = []
+            already_attempted = {*candidate["source_urls"], *(source["url"] for source in self.sources(run_id, candidate))}
             for raw in result.get("source_urls", [])[:8]:
                 try:
                     url = public_url(raw)
                 except (ValueError, TypeError):
                     continue
-                if url not in candidate["source_urls"] and url not in added:
+                if url not in already_attempted and url not in added:
                     added.append(url)
                 if len(added) >= 4 or len(candidate["source_urls"]) + len(added) >= 10:
                     break
@@ -296,6 +361,8 @@ class Engine:
         with self.store.exclusive():
             row = self.store.start(self.config, slot or self.clock().date().isoformat(), fingerprint(self.config))
             run_id = row["id"]
+            if row.get("saved_result_only"):
+                return {"ok": True, "saved_result_only": True, "warning": "completed_run_uses_saved_configuration", **self.store.summary(run_id)}
             if row["state"] == "pending_publish":
                 return self.publish_result(run_id)
             if row["state"] in ("completed", "completed_with_gaps"):
@@ -309,12 +376,15 @@ class Engine:
                     self.store.state(run_id, "running")
                     self.store.event(run_id, "lease", "coordinator_granted")
                     self.discover(run_id)
-                    for candidate in self.store.rows("SELECT * FROM candidates WHERE run_id=? AND stage IN ('fetch','assess','followup_search','followup_fetch','review','write_letter','review_letter','letter_ready') ORDER BY domain", (run_id,)):
+                    for candidate in self.store.rows("SELECT * FROM candidates WHERE run_id=? AND stage IN ('fetch','assess','assessment_checked','citation_repair','followup_search','followup_fetch','review','write_letter','review_letter','letter_ready') ORDER BY domain", (run_id,)):
                         self.qualify(run_id, candidate)
                     unresolved_followup = any(json.loads(row["followup"]).get("state") == "unavailable" for row in
                         self.store.rows("SELECT followup FROM candidates WHERE run_id=? AND followup IS NOT NULL", (run_id,)))
-                    self.store.finish_research(run_id, "completed_with_gaps" if unresolved_followup else "completed",
-                        "followup_result_unavailable" if unresolved_followup else None, publish_pending=self.config["mode"] == "ingest")
+                    unresolved_citation = any(json.loads(row["citation_repair"]).get("state") == "unavailable" for row in
+                        self.store.rows("SELECT citation_repair FROM candidates WHERE run_id=? AND citation_repair IS NOT NULL", (run_id,)))
+                    self.store.finish_research(run_id, "completed_with_gaps" if unresolved_followup or unresolved_citation else "completed",
+                        "followup_result_unavailable" if unresolved_followup else "citation_repair_unavailable" if unresolved_citation else None,
+                        publish_pending=self.config["mode"] == "ingest")
             except Exception as exc:
                 reason = str(exc) if str(exc) in ("research_resources_busy", "model_budget_exhausted") else type(exc).__name__
                 state = "waiting_resources" if reason == "research_resources_busy" else "completed_with_gaps" if reason == "model_budget_exhausted" else "failed"
